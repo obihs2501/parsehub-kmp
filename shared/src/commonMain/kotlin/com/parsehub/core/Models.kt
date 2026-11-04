@@ -64,4 +64,8 @@ data class ParseOptions(
     val cookieBili: String = "",
     val cookieXhs: String = "",
     val cookieToutiao: String = "",
-)
+    /** Cookie 池按平台轮换后的结果：平台 key -> Cookie */
+    val cookies: Map<String, String> = emptyMap(),
+) {
+    fun cookie(platformKey: String): String = cookies[platformKey].orEmpty()
+}

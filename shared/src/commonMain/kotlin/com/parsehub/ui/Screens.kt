@@ -77,7 +77,7 @@ fun ParseScreen(
                 }
                 val p = Platform.detect(c.link)
                 Text(
-                    if (p != null) "已识别：${p.label}" else "支持：抖音、快手、微博、B站、头条、皮皮虾、最右、小红书",
+                    if (p != null) "已识别：${p.label}" else "支持：" + com.parsehub.Hub.platforms.joinToString("、") { it.label },
                     style = MiuixTheme.textStyles.footnote2,
                     color = if (p != null) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )

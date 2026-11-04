@@ -43,13 +43,19 @@ data class AppConfig(
     }
 
     /** 按解析轮次生成解析选项 */
-    fun optionsFor(platformKey: String, turn: Int): ParseOptions = ParseOptions(
-        defaultTier = defaultTier,
-        cookieWeibo = cookieFor("weibo", turn),
-        cookieBili = cookieFor("bilibili", turn),
-        cookieXhs = cookieFor("xhs", turn),
-        cookieToutiao = cookieFor("toutiao", turn),
-    )
+    fun optionsFor(platformKey: String, turn: Int): ParseOptions {
+        val map = Platform.entries
+            .associate { it.key to cookieFor(it.key, turn) }
+            .filterValues { it.isNotEmpty() }
+        return ParseOptions(
+            defaultTier = defaultTier,
+            cookieWeibo = map["weibo"].orEmpty(),
+            cookieBili = map["bilibili"].orEmpty(),
+            cookieXhs = map["xhs"].orEmpty(),
+            cookieToutiao = map["toutiao"].orEmpty(),
+            cookies = map,
+        )
+    }
 
     /** 归档作者：命中映射返回映射名，否则返回原名 */
     fun creatorOf(platformKey: String, authorId: String, authorName: String): String {

@@ -6,10 +6,12 @@ enum class Platform(val key: String, val label: String, val dirPrefix: String, v
     KUAISHOU("kuaishou", "快手", "快手", "https://www.kuaishou.com/"),
     WEIBO("weibo", "微博", "微博", "https://weibo.com/"),
     BILIBILI("bilibili", "哔哩哔哩", "B站", "https://www.bilibili.com/"),
+    TIEBA("tieba", "贴吧", "贴吧", "https://tieba.baidu.com/"),
     TOUTIAO("toutiao", "今日头条", "头条", "https://www.toutiao.com/"),
     PIPIXIA("pipixia", "皮皮虾", "皮皮虾", "https://h5.pipix.com/"),
     ZUIYOU("zuiyou", "最右", "最右", "https://share.xiaochuankeji.cn/"),
-    XHS("xhs", "小红书", "小红书", "https://www.xiaohongshu.com/");
+    XHS("xhs", "小红书", "小红书", "https://www.xiaohongshu.com/"),
+    DOUBAN("douban", "豆瓣", "豆瓣", "https://www.douban.com/");
 
     companion object {
         fun ofKey(key: String): Platform? = entries.firstOrNull { it.key == key }
@@ -21,10 +23,12 @@ enum class Platform(val key: String, val label: String, val dirPrefix: String, v
                 "kuaishou" in t -> KUAISHOU
                 "weibo" in t || "t.cn/" in t -> WEIBO
                 "bilibili" in t || "b23.tv" in t || "acg.tv" in t -> BILIBILI
+                "tieba.baidu.com" in t || "tieba.com/p/" in t -> TIEBA
                 "toutiao" in t -> TOUTIAO
                 "pipix" in t -> PIPIXIA
                 "izuiyou" in t || "xiaochuankeji" in t -> ZUIYOU
                 "xiaohongshu" in t || "xhslink" in t -> XHS
+                "douban.com" in t || "douc.cc" in t -> DOUBAN
                 else -> null
             }
         }

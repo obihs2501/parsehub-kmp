@@ -19,10 +19,12 @@ object Hub {
             Platform.KUAISHOU -> KuaishouParser.parse(text, opts)
             Platform.WEIBO -> WeiboParser.parse(text, opts)
             Platform.BILIBILI -> BilibiliParser.parse(text, opts)
+            Platform.TIEBA -> TiebaParser.parse(text, opts)
             Platform.TOUTIAO -> ToutiaoParser.parse(text, opts)
             Platform.PIPIXIA -> PipixiaParser.parse(text, opts)
             Platform.ZUIYOU -> ZuiyouParser.parse(text, opts)
             Platform.XHS -> XhsParser.parse(text, opts)
+            Platform.DOUBAN -> DoubanParser.parse(text, opts)
         }
     }
 }

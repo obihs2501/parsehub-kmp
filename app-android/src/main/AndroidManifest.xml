@@ -43,11 +43,15 @@
                 <data android:scheme="https" android:host="b23.tv" />
                 <data android:scheme="https" android:host="www.bilibili.com" />
                 <data android:scheme="https" android:host="m.bilibili.com" />
+                <data android:scheme="https" android:host="tieba.baidu.com" />
                 <data android:scheme="https" android:host="www.toutiao.com" />
                 <data android:scheme="https" android:host="h5.pipix.com" />
                 <data android:scheme="https" android:host="share.xiaochuankeji.cn" />
                 <data android:scheme="https" android:host="www.xiaohongshu.com" />
                 <data android:scheme="https" android:host="xhslink.com" />
+                <data android:scheme="https" android:host="www.douban.com" />
+                <data android:scheme="https" android:host="m.douban.com" />
+                <data android:scheme="https" android:host="douc.cc" />
             </intent-filter>
         </activity>
     </application>
