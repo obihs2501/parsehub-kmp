@@ -24,6 +24,9 @@ compose.desktop {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "ParseHubStudio"
             packageVersion = "0.1.0"
+            windows {
+                iconFile.set(project.file("src/main/resources/icon.ico"))
+            }
         }
     }
 }
