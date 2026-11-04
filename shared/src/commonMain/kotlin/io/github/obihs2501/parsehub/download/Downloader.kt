@@ -1,17 +1,17 @@
 package io.github.obihs2501.parsehub.download
-import okio.Buffer
-import io.ktor.utils.io.readAvailable
 
 import io.github.obihs2501.parsehub.core.nowMillis
 import io.github.obihs2501.parsehub.net.Http
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import okio.Buffer
 import okio.FileSystem
 import okio.Path
 import okio.buffer
