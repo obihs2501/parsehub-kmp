@@ -53,6 +53,8 @@ data class ParseResult(
     val tiers: List<Tier>,
     val aux: List<AuxItem>,
     val images: List<ImageItem>,
+    /** 作者 ID（用于作者映射；部分平台拿不到时为空，此时只能按昵称匹配） */
+    val authorId: String = "",
 )
 
 /** 解析选项（cookie 均为可选） */

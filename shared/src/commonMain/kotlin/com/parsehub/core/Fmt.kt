@@ -117,3 +117,28 @@ private fun civilFromDays(z0: Long): String {
 }
 
 fun today(): String = fmtDate(nowMillis() / 1000).ifEmpty { "0000-00-00" }
+
+/** 东八区当前时间 HHmmss（命名模板 {time}） */
+fun nowTime(): String {
+    val secs = nowMillis() / 1000
+    val day = ((secs + 8 * 3600) % 86400).toInt().let { if (it < 0) it + 86400 else it }
+    val h = day / 3600
+    val m = (day % 3600) / 60
+    val s = day % 60
+    fun pad(v: Int) = v.toString().padStart(2, '0')
+    return pad(h) + pad(m) + pad(s)
+}
+
+/** 东八区当前时间 yyyyMMdd-HHmmss（非合并归档时的目录后缀） */
+fun nowCompact(): String = today().replace("-", "") + "-" + nowTime()
+
+/** 时间戳 -> yyyy-MM-dd HH:mm（记录列表用） */
+fun dateTime(ts: Long): String {
+    val d = fmtDate(ts)
+    if (d.isEmpty()) return ""
+    val secs = (if (ts >= 1_000_000_000_000L) ts / 1000 else ts) + 8 * 3600
+    val day = (secs % 86400).toInt()
+    val h = (day / 3600).toString().padStart(2, '0')
+    val m = ((day % 3600) / 60).toString().padStart(2, '0')
+    return "$d $h:$m"
+}

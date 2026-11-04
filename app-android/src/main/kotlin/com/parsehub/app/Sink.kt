@@ -8,17 +8,36 @@ import okio.FileSystem
 import okio.Path
 import java.io.File
 
-/** MediaStore 落点：写入 Download/<relDir>/<name>，Android 10+ 无需存储权限 */
-class MediaStoreSink(private val ctx: Context, private val relDir: String) : FileSink {
+/** 落点：Download/<relDir>/<name>，Android 10+ 无需存储权限；同名不覆盖 */
+class MediaStoreSink(private val ctx: Context) : FileSink {
 
-    override suspend fun accept(tempPath: Path, fileName: String, mime: String) {
+    private val resolver get() = ctx.contentResolver
+
+    override suspend fun exists(relDir: String, fileName: String): Boolean {
+        val cols = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.IS_PENDING)
+        val sel = "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND ${MediaStore.MediaColumns.DISPLAY_NAME}=?"
+        val args = arrayOf("Download/$relDir/", fileName)
+        return try {
+            resolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cols, sel, args, null)?.use { c ->
+                var found = false
+                while (c.moveToNext()) {
+                    // 只有已落盘（非 pending）的才算占用名字
+                    if (c.getInt(1) == 0) found = true
+                }
+                found
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    override suspend fun accept(tempPath: Path, relDir: String, fileName: String, mime: String) {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/$relDir")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/$relDir/")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
-        val resolver = ctx.contentResolver
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: throw RuntimeException("MediaStore 插入失败")
         try {
