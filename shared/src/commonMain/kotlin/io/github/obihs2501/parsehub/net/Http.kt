@@ -11,7 +11,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
-import io.ktor.http.URLBuilder
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
 import kotlinx.serialization.json.JsonElement
@@ -95,11 +94,15 @@ object Http {
 
     fun resolveUrl(base: String, location: String): String {
         if (location.startsWith("http")) return location
-        return try {
-            URLBuilder(base).takeFrom(location).buildString()
-        } catch (_: Exception) {
-            location
-        }
+                if (location.startsWith("http://") || location.startsWith("https://")) return location
+        val se = base.indexOf("://")
+        if (se <= 0) return location
+        val hs = base.indexOf('/', se + 3)
+        val origin = if (hs > 0) base.substring(0, hs) else base
+        if (location.startsWith("//")) return base.substring(0, se + 1) + location
+        if (location.startsWith("/")) return origin + location
+        val dirEnd = if (hs > 0) base.lastIndexOf('/') else -1
+        return if (dirEnd > hs) base.substring(0, dirEnd + 1) + location else origin + "/" + location
     }
 
     private fun HttpRequestBuilder.applyHeaders(h: Map<String, String>) {

@@ -1,4 +1,5 @@
 package io.github.obihs2501.parsehub.download
+import io.ktor.utils.io.readAvailable
 
 import io.github.obihs2501.parsehub.core.nowMillis
 import io.github.obihs2501.parsehub.net.Http
@@ -122,11 +123,11 @@ object Downloader {
         var lastPush = t0
 
         val ch = resp.bodyAsChannel()
-        fs.sink(tmp, append = done0 > 0).buffer().use { bw ->
+        (if (done0 > 0) fs.appendingSink(tmp) else fs.sink(tmp)).buffer().use { bw ->
             val buf = ByteArray(256 * 1024)
             while (true) {
                 if (shouldCancel()) throw CancelledException()
-                val n = ch.readAvailable(buf)
+                val n = ch.readAvailable(buf, 0, buf.size)
                 if (n == -1) break
                 if (n == 0) continue
                 bw.write(buf, 0, n)
@@ -195,11 +196,11 @@ object Downloader {
                             throw RuntimeException("远端大小变化")
                         }
                         val ch = resp.bodyAsChannel()
-                        fs.sink(p, append = false).buffer().use { bw ->
+                        fs.sink(p).buffer().use { bw ->
                             val buf = ByteArray(256 * 1024)
                             while (true) {
                                 if (shouldCancel()) throw CancelledException()
-                                val rn = ch.readAvailable(buf)
+                                val rn = ch.readAvailable(buf, 0, buf.size)
                                 if (rn == -1) break
                                 if (rn == 0) continue
                                 bw.write(buf, 0, rn)
@@ -231,7 +232,7 @@ object Downloader {
             }
         }.awaitAll()
 
-        fs.sink(tmp, append = false).buffer().use { target ->
+        fs.sink(tmp).buffer().use { target ->
             for (p in segPaths) {
                 val sz = fs.metadataOrNull(p)?.size ?: 0L
                 if (sz <= 0) throw RuntimeException("分片文件缺失: ${p.name}")
@@ -277,7 +278,7 @@ object Downloader {
                     if (type == "moov") moov = true
                     var skip = sz - 8
                     while (skip > 0) {
-                        val s = src.skip(skip)
+                        val s = if (src.skip(skip)) 1L else 0L
                         if (s <= 0) return false
                         skip -= s
                     }
