@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="ParseHub"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+        android:usesCleartextTraffic="true"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- 抖音/快手/微博/B站/头条/皮皮虾/最右/小红书 分享 → 本应用 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="v.douyin.com" />
+                <data android:scheme="https" android:host="www.douyin.com" />
+                <data android:scheme="https" android:host="v.kuaishou.com" />
+                <data android:scheme="https" android:host="www.kuaishou.com" />
+                <data android:scheme="https" android:host="weibo.com" />
+                <data android:scheme="https" android:host="m.weibo.cn" />
+                <data android:scheme="https" android:host="video.weibo.com" />
+                <data android:scheme="https" android:host="b23.tv" />
+                <data android:scheme="https" android:host="www.bilibili.com" />
+                <data android:scheme="https" android:host="m.bilibili.com" />
+                <data android:scheme="https" android:host="www.toutiao.com" />
+                <data android:scheme="https" android:host="h5.pipix.com" />
+                <data android:scheme="https" android:host="share.xiaochuankeji.cn" />
+                <data android:scheme="https" android:host="www.xiaohongshu.com" />
+                <data android:scheme="https" android:host="xhslink.com" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
