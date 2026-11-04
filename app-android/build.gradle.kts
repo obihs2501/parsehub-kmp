@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.obihs2501.parsehub"
+    namespace = "com.parsehub.app"
     compileSdk { version = release(37) }
 
     defaultConfig {
-        applicationId = "io.github.obihs2501.parsehub"
+        applicationId = "com.parsehub.app"
         minSdk = 29
         targetSdk = 36
         versionCode = 1

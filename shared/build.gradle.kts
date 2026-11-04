@@ -6,7 +6,7 @@ plugins {
 
 kotlin {
     android {
-        namespace = "io.github.obihs2501.parsehub.shared"
+        namespace = "com.parsehub.shared"
         compileSdk { version = release(37) }
         minSdk = 29
     }

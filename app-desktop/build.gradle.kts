@@ -19,7 +19,7 @@ dependencies {
 
 compose.desktop {
     application {
-        mainClass = "io.github.obihs2501.parsehub.desktop.MainKt"
+        mainClass = "com.parsehub.desktop.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "ParseHubStudio"
