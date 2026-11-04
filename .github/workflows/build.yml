@@ -24,6 +24,21 @@ jobs:
         run: chmod +x gradlew
       - name: Build Android APK + Desktop app
         run: ./gradlew :app-android:assembleDebug :app-desktop:classes --no-daemon --stacktrace
+      - name: Verify launcher activity is packaged
+        run: |
+          set -euo pipefail
+          APK=$(ls app-android/build/outputs/apk/debug/*.apk | head -1)
+          echo "apk: $APK"
+          CLI="${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer"
+          ACT=$("$CLI" manifest print "$APK" | grep -oE 'android:name="[^"]+MainActivity"' | head -1 | cut -d'"' -f2)
+          echo "launcher activity: $ACT"
+          DEX=$(printf '%s' "$ACT" | tr '.' '/')
+          if unzip -p "$APK" 'classes*.dex' | strings | grep -qF "L$DEX;"; then
+            echo "OK: launcher class present in dex"
+          else
+            echo "FAIL: $DEX not found in dex"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: parsehub-apk
