@@ -368,6 +368,19 @@ object DouyinParser {
     suspend fun buildTiers(detail: JsonObject, jx: JxInfo, wantOrigin: Boolean): List<Tier> {
         val v = detail.obj("video") ?: JsonObject(emptyMap())
         val raw = mutableListOf<Tier>()
+        // 顶层 play_addr 也收进候选（对齐原版 _stream_candidates）：它有时只是低清自适应预览，
+        // 但有时又是唯一可用地址；统一收集后按清晰度排序，不再按接口类型挑来源。
+        run {
+            val pa = v.obj("play_addr")
+            val urls = preferUrls(urlListOf(pa)).map { ensureMime(toHttps(it)) }
+            if (urls.isNotEmpty()) {
+                raw += Tier(
+                    -1, "play_addr", pa?.int("width") ?: 0, pa?.int("height") ?: 0,
+                    0L, pa?.lng("data_size") ?: 0L, v.bool("is_h265"), 0.0, true,
+                    false, urls, pa?.str("uri")?.ifEmpty { null },
+                )
+            }
+        }
         val br = v.arr("bit_rate")
         if (br != null) {
             for (b in br.objs()) {
@@ -380,7 +393,8 @@ object DouyinParser {
                     bps = b.lng("bit_rate"), size = pa.lng("data_size"),
                     h265 = b.bool("is_h265"),
                     fps = b.dbl("FPS"), fpsEst = true,
-                    isOrigin = false, urls = urls,
+                    // quality_type=origin 表示这条就是原始上传档
+                    isOrigin = b.str("quality_type") == "origin", urls = urls,
                     uri = pa.str("uri").ifEmpty { null },
                 )
             }
@@ -396,8 +410,7 @@ object DouyinParser {
                 )
             }
         }
-        val uniq = raw.distinctBy { "${it.gear}/${it.w}/${it.h}/${it.bps}/${it.size}" }
-            .sortedWith(compareByDescending<Tier> { it.w.toLong() * it.h }.thenByDescending { it.bps })
+        val uniq = raw.distinctBy { it.urls.firstOrNull() ?: "${it.gear}/${it.w}/${it.h}/${it.bps}" }
             .toMutableList()
 
         if (wantOrigin && uniq.isNotEmpty()) {
@@ -442,10 +455,17 @@ object DouyinParser {
                     -1, "原画", w, h, bps, size, h265, fps, fpsEst,
                     true, ourls.map { ensureMime(toHttps(it)) }, uri.ifEmpty { null },
                 )
-                uniq.sortWith(compareByDescending<Tier> { it.w.toLong() * it.h }.thenByDescending { it.bps })
             }
         }
-        return uniq.mapIndexed { i, t -> t.copy(idx = i) }
+        // 排序：原画永远第一（分辨率未知也不该被挤下去），其余按 分辨率面积 → 体积 → 码率 从高到低
+        return uniq
+            .sortedWith(
+                compareByDescending<Tier> { if (it.isOrigin) 1 else 0 }
+                    .thenByDescending { it.w.toLong() * it.h }
+                    .thenByDescending { it.size }
+                    .thenByDescending { it.bps },
+            )
+            .mapIndexed { i, t -> t.copy(idx = i) }
     }
 
     // ------------------------------------------------------------------ 图集 / 附属

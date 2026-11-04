@@ -6,3 +6,4 @@ internal expect fun aesCbcDecrypt(data: ByteArray, key: ByteArray, iv: ByteArray
 internal expect fun b64Decode(s: String): ByteArray?
 internal expect fun nowMillis(): Long
 internal expect fun urlDecode(s: String): String
+internal expect fun md5Hex(data: ByteArray): String

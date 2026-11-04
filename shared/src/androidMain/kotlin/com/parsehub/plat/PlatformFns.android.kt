@@ -36,3 +36,10 @@ internal actual fun urlDecode(s: String): String =
     } catch (_: Exception) {
         s
     }
+
+internal actual fun md5Hex(data: ByteArray): String =
+    MessageDigest.getInstance("MD5").digest(data).joinToString("") { b ->
+        val v = b.toInt() and 0xFF
+        val h = v.toString(16)
+        if (h.length == 1) "0$h" else h
+    }

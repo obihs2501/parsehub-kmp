@@ -93,7 +93,7 @@ class HistoryStore(private val fs: FileSystem, private val path: Path, private v
         for (e in list) {
             sb.append(
                 listOf(
-                    Fmt.dateTime(e.ts), e.platform, e.author, e.creator, e.id, e.title,
+                    dateTime(e.ts), e.platform, e.author, e.creator, e.id, e.title,
                     e.kind, e.status, e.files.toString(), e.dir, e.url, e.error,
                 ).joinToString(",") { cell(it) },
             ).append('\n')

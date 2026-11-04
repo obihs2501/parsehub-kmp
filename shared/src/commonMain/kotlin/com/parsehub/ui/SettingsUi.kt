@@ -26,6 +26,7 @@ import com.parsehub.core.CookieEntry
 import com.parsehub.core.Fmt
 import com.parsehub.core.Naming
 import com.parsehub.core.Platform
+import com.parsehub.core.maskSecret
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Switch
@@ -90,15 +91,23 @@ fun SettingsHome(config: AppConfig, onOpen: (SettingsPage) -> Unit) {
 
         SectionLabel("偏好")
         Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(horizontal = 16.dp)) {
-            ArrowPreference("外观", "${themeLabel(config.theme)} · 默认${tierLabel(config.defaultTier)}") {
-                onOpen(SettingsPage.APPEARANCE)
-            }
+            ArrowPreference(
+                title = "外观",
+                summary = "${themeLabel(config.theme)} · 默认${tierLabel(config.defaultTier)}",
+                onClick = { onOpen(SettingsPage.APPEARANCE) },
+            )
             HairLine()
-            ArrowPreference("下载", "${config.connections} 连接 · 超时 ${config.timeoutSec} 秒") {
-                onOpen(SettingsPage.DOWNLOAD)
-            }
+            ArrowPreference(
+                title = "下载",
+                summary = "${config.connections} 连接 · 超时 ${config.timeoutSec} 秒",
+                onClick = { onOpen(SettingsPage.DOWNLOAD) },
+            )
             HairLine()
-            ArrowPreference("关于", "ParseHub 0.1.0 · Miuix") { onOpen(SettingsPage.ABOUT) }
+            ArrowPreference(
+                title = "关于",
+                summary = "ParseHub 0.1.0 · Miuix",
+                onClick = { onOpen(SettingsPage.ABOUT) },
+            )
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -299,7 +308,7 @@ fun CookieSettings(config: AppConfig, onConfig: (AppConfig) -> Unit) {
                                 style = MiuixTheme.textStyles.main,
                             )
                             Text(
-                                Fmt.maskSecret(e.cookie, 8),
+                                maskSecret(e.cookie, 8),
                                 style = MiuixTheme.textStyles.footnote2,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
