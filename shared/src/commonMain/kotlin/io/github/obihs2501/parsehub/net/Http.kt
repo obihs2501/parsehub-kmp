@@ -93,8 +93,7 @@ object Http {
     }
 
     fun resolveUrl(base: String, location: String): String {
-        if (location.startsWith("http")) return location
-                if (location.startsWith("http://") || location.startsWith("https://")) return location
+        if (location.startsWith("http://") || location.startsWith("https://")) return location
         val se = base.indexOf("://")
         if (se <= 0) return location
         val hs = base.indexOf('/', se + 3)

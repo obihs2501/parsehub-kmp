@@ -1,4 +1,5 @@
 package io.github.obihs2501.parsehub.download
+import okio.Buffer
 import io.ktor.utils.io.readAvailable
 
 import io.github.obihs2501.parsehub.core.nowMillis
@@ -256,6 +257,7 @@ object Downloader {
             if (total < 16) return false
             if (size != null && size > 0 && total != size) return false
             var moov = false
+            val discard = Buffer()
             fs.source(path).buffer().use { src ->
                 var pos = 0L
                 while (pos < total) {
@@ -278,9 +280,10 @@ object Downloader {
                     if (type == "moov") moov = true
                     var skip = sz - 8
                     while (skip > 0) {
-                        val s = if (src.skip(skip)) 1L else 0L
-                        if (s <= 0) return false
-                        skip -= s
+                        val chunk = src.read(discard, minOf(skip, 65536L))
+                        if (chunk == -1L) return false
+                        discard.clear()
+                        skip -= chunk
                     }
                     pos += sz
                 }
