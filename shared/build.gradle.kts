@@ -17,7 +17,7 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.ktor.client.core)
-            implementation(libs.okio)
+            api(libs.okio)
             implementation(libs.jetbrains.compose.runtime)
         }
         androidMain.dependencies {
