@@ -15,6 +15,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,6 +107,16 @@ fun App(sharedText: MutableState<String>) {
     var page by remember { mutableStateOf<SettingsPage?>(null) }
     var toast by remember { mutableStateOf("") }
     var immersive by remember { mutableStateOf(false) }
+
+    // 系统栏图标：浅色页面用深色图标，深色主题 / 看图时用白色图标
+    val window = remember(ctx) { ctx.findActivity()?.window }
+    val sysDark = isSystemInDarkTheme()
+    val darkUi = when (config.theme) {
+        "light" -> false
+        "dark" -> true
+        else -> sysDark
+    }
+    SideEffect { setSystemBarsDarkIcons(window, !(darkUi || immersive)) }
 
     fun applyConfig(next: AppConfig) {
         config = next

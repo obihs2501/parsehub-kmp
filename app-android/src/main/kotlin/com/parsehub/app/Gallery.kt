@@ -429,7 +429,7 @@ internal fun GalleryScreen(
                         SmallTitle(text = "文件夹")
                     }
                     for ((name, count) in childFolders) {
-                        item(key = "dir:$name", span = { GridItemSpan(maxLineSpan) }) {
+                        item(key = "dir:$name") {
                             FolderCard(name = name, count = count) {
                                 stack = stack + name
                                 selected = emptySet()
@@ -592,29 +592,28 @@ internal fun GalleryScreen(
 @Composable
 private fun FolderCard(name: String, count: Int, onOpen: () -> Unit) {
     Card(
-        Modifier.fillMaxWidth().height(76.dp).clickable { onOpen() },
-        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().height(112.dp).clickable { onOpen() },
+        insideMargin = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Icon(MiuixIcons.Regular.Folder, contentDescription = null, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    name,
-                    style = MiuixTheme.textStyles.body2,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "$count 项",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
+        Column(
+            Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(MiuixIcons.Regular.Folder, contentDescription = null, modifier = Modifier.size(30.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
-                "›",
-                style = MiuixTheme.textStyles.title3,
+                name,
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "$count 项",
+                style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
             )
         }
     }
@@ -637,33 +636,9 @@ private fun ViewerOverlay(
     var chrome by remember { mutableStateOf(true) }
     var zoomed by remember { mutableStateOf(false) }
 
-    // 看图时背景是黑的：状态栏图标改成白色，退出时还原
     DisposableEffect(Unit) {
         onImmersive(true)
-        val window = (ctx as? Activity)?.window
-        val controller = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) window?.insetsController else null
-        val prevLight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            (controller?.systemBarsAppearance ?: 0) and WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-        } else 0
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            controller?.setSystemBarsAppearance(0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
-        } else {
-            @Suppress("DEPRECATION")
-            window?.decorView?.let { v ->
-                v.systemUiVisibility = v.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
-            }
-        }
-        onDispose {
-            onImmersive(false)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                controller?.setSystemBarsAppearance(prevLight, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
-            } else {
-                @Suppress("DEPRECATION")
-                window?.decorView?.let { v ->
-                    v.systemUiVisibility = v.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                }
-            }
-        }
+        onDispose { onImmersive(false) }
     }
     LaunchedEffect(pagerState.currentPage) {
         items.getOrNull(pagerState.currentPage)?.let { current = it }
