@@ -149,7 +149,12 @@ fun DesktopApp() {
                             SettingsPage.ALIASES -> AliasSettings(config) { applyConfig(it) }
                             SettingsPage.COOKIES -> CookieSettings(config) { applyConfig(it) }
                             SettingsPage.APPEARANCE -> AppearanceSettings(config) { applyConfig(it) }
-                            SettingsPage.DOWNLOAD -> DownloadSettings(config) { applyConfig(it) }
+                            SettingsPage.DOWNLOAD -> DownloadSettings(
+                                config = config,
+                                onConfig = { applyConfig(it) },
+                                rootLabel = File(outDir).absolutePath,
+                                onPickFolder = { pickFolder(outDir)?.let { picked -> outDir = picked } },
+                            )
                             SettingsPage.ABOUT -> AboutSettings { url -> openUrl(url) }
                         }
                         key == Tab.PARSE.name -> ParseScreen(controller, readClipboard = ::readClipboard)
