@@ -110,17 +110,18 @@ object Http {
 
     fun resolveUrl(base: String, location: String): String {
         if (location.isEmpty()) return base.substringBefore('#')
-        val builder = URLBuilder(base)
-        val oldPath = builder.encodedPath
-        // Ktor's takeFrom appends queries and drops the final path segment even for ?query.
-        // Clear inherited components, then restore the path for query/fragment-only references.
-        if (!location.startsWith("#")) {
-            builder.encodedParameters.clear()
-            builder.trailingQuery = false
+        // Keep the encoded query verbatim: parsing and rebuilding can change signed bytes.
+        val reference = location.substringBefore('#').substringBefore('?')
+        val suffix = when {
+            '?' in location.substringBefore('#') -> "?" + location.substringAfter('?')
+            reference.isEmpty() -> base.substringBefore('#').substringAfter('?', "")
+                .let { if ('?' in base.substringBefore('#')) "?$it" else "" } +
+                (if ('#' in location) "#" + location.substringAfter('#') else "")
+            '#' in location -> "#" + location.substringAfter('#')
+            else -> ""
         }
-        builder.encodedFragment = ""
-        builder.takeFrom(location)
-        if (location.startsWith("?") || location.startsWith("#")) builder.encodedPath = oldPath
+        val builder = URLBuilder(base.substringBefore('#').substringBefore('?'))
+        if (reference.isNotEmpty()) builder.takeFrom(reference)
         val segments = mutableListOf<String>()
         val path = builder.encodedPath
         for (segment in path.split('/')) {
@@ -132,7 +133,7 @@ object Http {
         }
         if (path.endsWith("/.") || path.endsWith("/..")) segments += ""
         builder.encodedPath = segments.joinToString("/").ifEmpty { "/" }
-        return builder.buildString()
+        return builder.buildString() + suffix
     }
 
     private fun HttpRequestBuilder.applyHeaders(h: Map<String, String>) {
