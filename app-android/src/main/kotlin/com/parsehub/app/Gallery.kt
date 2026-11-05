@@ -61,6 +61,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
@@ -107,6 +108,7 @@ internal fun GalleryScreen(ctx: Context, onMessage: (String) -> Unit) {
     var columns by remember { mutableStateOf(3) }
     var viewerAt by remember { mutableStateOf<Int?>(null) }
     var showFolders by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result.values.any { it }) {
@@ -126,9 +128,13 @@ internal fun GalleryScreen(ctx: Context, onMessage: (String) -> Unit) {
 
     val folders = remember(all) { all.map { it.bucket }.distinct().sorted() }
 
-    val shown = remember(all, folder, filter, sort) {
+    val shown = remember(all, folder, filter, sort, query) {
         var list = all
         if (folder.isNotEmpty()) list = list.filter { it.bucket == folder }
+        if (query.isNotBlank()) {
+            val q = query.trim().lowercase()
+            list = list.filter { it.name.lowercase().contains(q) }
+        }
         list = when (filter) {
             MediaFilter.ALL -> list
             MediaFilter.IMAGE -> list.filter { !it.isVideo }
@@ -149,6 +155,15 @@ internal fun GalleryScreen(ctx: Context, onMessage: (String) -> Unit) {
             }
             TextButton(text = "刷新", onClick = { reload++ })
         }
+
+        TextField(
+            value = query,
+            onValueChange = { query = it },
+            label = "搜索文件名",
+            useLabelAsPlaceholder = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
 
         // 文件夹 / 类型 / 排序 / 列数
         Row(
