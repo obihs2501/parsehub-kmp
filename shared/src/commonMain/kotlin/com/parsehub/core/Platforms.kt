@@ -13,7 +13,11 @@ enum class Platform(val key: String, val label: String, val dirPrefix: String, v
     XHS("xhs", "小红书", "小红书", "https://www.xiaohongshu.com/"),
     DOUBAN("douban", "豆瓣", "豆瓣", "https://www.douban.com/"),
     COOLAPK("coolapk", "酷安", "酷安", "https://www.coolapk.com/"),
-    WEIXIN("weixin", "微信公众号", "公众号", "https://mp.weixin.qq.com/");
+    WEIXIN("weixin", "微信公众号", "公众号", "https://mp.weixin.qq.com/"),
+    TIKTOK("tiktok", "TikTok", "TikTok", "https://www.tiktok.com/"),
+    INSTAGRAM("instagram", "Instagram", "Ins", "https://www.instagram.com/"),
+    TWITTER("twitter", "X / Twitter", "X", "https://x.com/"),
+    THREADS("threads", "Threads", "Threads", "https://www.threads.com/");
 
     companion object {
         fun ofKey(key: String): Platform? = entries.firstOrNull { it.key == key }
@@ -33,6 +37,10 @@ enum class Platform(val key: String, val label: String, val dirPrefix: String, v
                 "douban.com" in t || "douc.cc" in t -> DOUBAN
                 "coolapk.com" in t -> COOLAPK
                 "mp.weixin.qq.com" in t -> WEIXIN
+                "tiktok.com" in t || "vt.tiktok" in t || "vm.tiktok" in t -> TIKTOK
+                "instagram.com" in t || "instagr.am" in t -> INSTAGRAM
+                "x.com/" in t || "twitter.com" in t || "t.co/" in t -> TWITTER
+                "threads.com" in t || "threads.net" in t -> THREADS
                 else -> null
             }
         }
@@ -52,6 +60,7 @@ private val TRACKING_KEYS = setOf(
     "share_token", "share_source", "share_medium", "share_plat", "share_app_id",
     "from_source", "from", "is_from_webapp", "sender_device", "web_id",
     "weibo_id", "wxurl", "spm_id_from", "vd_source", "share_from", "sec_source", "wxfid",
+    "igshid", "igsh", "__a", "tt_from", "u_code", "is_copy_url",
 )
 
 /** 去掉常见的分享跟踪参数，保留业务参数 */

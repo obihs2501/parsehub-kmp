@@ -27,6 +27,10 @@ object Hub {
             Platform.DOUBAN -> DoubanParser.parse(text, opts)
             Platform.COOLAPK -> CoolapkParser.parse(text, opts)
             Platform.WEIXIN -> WeixinParser.parse(text, opts)
+            Platform.TIKTOK -> TiktokParser.parse(text, opts)
+            Platform.INSTAGRAM -> InstagramParser.parse(text, opts)
+            Platform.TWITTER -> TwitterParser.parse(text, opts)
+            Platform.THREADS -> ThreadsParser.parse(text, opts)
         }
     }
 }

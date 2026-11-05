@@ -16,16 +16,17 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -78,8 +80,6 @@ import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationRail
 import top.yukonga.miuix.kmp.basic.NavigationRailItem
 import top.yukonga.miuix.kmp.blur.textureBlur
@@ -87,7 +87,6 @@ import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalWindowInfo
 import android.os.Build
 import androidx.activity.SystemBarStyle
@@ -201,10 +200,29 @@ fun App(sharedText: MutableState<String>) {
         val wideScreen = size.width >= 840.dp || (size.width >= 600.dp && size.height / size.width < 1.2f)
 
         Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
-            Scaffold(
-                topBar = {
-                    if (!immersive) {
-                        Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
+            // 大屏：侧栏与 Scaffold 平级放在外层 Row，顶栏只覆盖右侧内容区
+            // （参考 Miuix 官方 AppContent 的自适应布局）；窄屏仍是单栏 Scaffold。
+            Row(Modifier.fillMaxSize()) {
+                if (wideScreen && !immersive) {
+                    NavigationRail(
+                        expanded = false,
+                        defaultWindowInsetsPadding = true,
+                    ) {
+                        Tab.entries.forEach { t ->
+                            NavigationRailItem(
+                                selected = page == null && tab == t,
+                                onClick = { page = null; tab = t },
+                                icon = t.icon,
+                                label = t.title,
+                            )
+                        }
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxSize()) {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    topBar = {
+                        if (!immersive) {
                             SmallTopAppBar(
                                 title = page?.title ?: tab.title,
                                 navigationIcon = {
@@ -216,58 +234,14 @@ fun App(sharedText: MutableState<String>) {
                                 },
                             )
                         }
-                    }
-                },
-                bottomBar = {
-                    // 贴底导航用 bottomBar，Scaffold 会把它的高度从内容区里扣掉；大屏改用侧栏
-                    if (!immersive && !wideScreen && config.navStyle == "classic") {
-                        Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
-                            NavigationBar {
-                                Tab.entries.forEach { t ->
-                                    NavigationBarItem(
-                                        selected = page == null && tab == t,
-                                        onClick = { page = null; tab = t },
-                                        icon = t.icon,
-                                        label = t.title,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                },
-                floatingToolbar = {
-                    // 悬浮 / 液态玻璃导航用 floatingToolbar 叠在内容之上；大屏改用侧栏
-                    if (!immersive && !wideScreen && config.navStyle != "classic") {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .windowInsetsPadding(WindowInsets.navigationBars)
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            // 外层 Box 尺寸跟随 FloatingNavigationBar 自身高度，
-                            // textureBlur 才能画出与胶囊一致的模糊范围（不再过高/拉伸）
-                            Box(
-                                if (glass) {
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .textureBlur(
-                                            backdrop = backdrop,
-                                            shape = RoundedCornerShape(50),
-                                            blurRadius = 22f,
-                                        )
-                                } else {
-                                    Modifier.fillMaxWidth()
-                                },
-                            ) {
-                                FloatingNavigationBar(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = if (glass) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
-                                    horizontalOutSidePadding = 0.dp,
-                                    defaultWindowInsetsPadding = false,
-                                ) {
+                    },
+                    bottomBar = {
+                        // 贴底导航用 bottomBar，Scaffold 会把它的高度从内容区里扣掉；大屏改用侧栏
+                        if (!immersive && !wideScreen && config.navStyle == "classic") {
+                            Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                                NavigationBar {
                                     Tab.entries.forEach { t ->
-                                        FloatingNavigationBarItem(
+                                        NavigationBarItem(
                                             selected = page == null && tab == t,
                                             onClick = { page = null; tab = t },
                                             icon = t.icon,
@@ -277,109 +251,141 @@ fun App(sharedText: MutableState<String>) {
                                 }
                             }
                         }
-                    }
-                },
-                content = { pad ->
-                    // 悬浮导航不占内容高度，这里额外留出空间，避免遮住列表末尾；大屏无悬浮栏
-                    val floatExtra = if (!immersive && !wideScreen && config.navStyle != "classic") 84.dp else 0.dp
-                    Row(Modifier.fillMaxSize()) {
-                    // 大屏：左侧固定侧栏（Miuix 官方自适应），底栏自动隐藏
-                    if (wideScreen && !immersive) {
-                        NavigationRail(
-                            expanded = true,
-                            defaultWindowInsetsPadding = false,
-                        ) {
-                            Tab.entries.forEach { t ->
-                                NavigationRailItem(
-                                    selected = page == null && tab == t,
-                                    onClick = { page = null; tab = t },
-                                    icon = t.icon,
-                                    label = t.title,
-                                )
+                    },
+                    floatingToolbar = {
+                        // 悬浮 / 液态玻璃导航用 floatingToolbar 叠在内容之上；大屏改用侧栏。
+                        // 自己控制高度和圆角，不用 FloatingNavigationBar 的内置大底部内边距，
+                        // 避免胶囊被拉成整条、模糊区域过高。
+                        if (!immersive && !wideScreen && config.navStyle != "classic") {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .windowInsetsPadding(WindowInsets.navigationBars)
+                                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val shape = RoundedCornerShape(50)
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(64.dp)
+                                        .then(
+                                            if (glass) {
+                                                Modifier.textureBlur(
+                                                    backdrop = backdrop,
+                                                    shape = shape,
+                                                    blurRadius = 20f,
+                                                )
+                                            } else {
+                                                Modifier.background(MiuixTheme.colorScheme.surfaceContainer, shape)
+                                            },
+                                        )
+                                        .clip(shape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxSize(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                    ) {
+                                        Tab.entries.forEach { t ->
+                                            NavigationBarItem(
+                                                modifier = Modifier.weight(1f),
+                                                selected = page == null && tab == t,
+                                                onClick = { page = null; tab = t },
+                                                icon = t.icon,
+                                                label = t.title,
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
-                    }
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxSize()
-                            .layerBackdrop(backdrop)
-                            .padding(
-                                top = pad.calculateTopPadding(),
-                                bottom = pad.calculateBottomPadding() + floatExtra,
-                            ),
-                    ) {
-                        AnimatedContent(
-                            targetState = page?.name ?: tab.name,
-                            transitionSpec = {
-                                (slideInHorizontally(animationSpec = PageSpring) { it / 8 } + fadeIn())
-                                    .togetherWith(slideOutHorizontally(animationSpec = PageSpring) { -it / 8 } + fadeOut())
-                            },
-                            label = "page",
-                        ) { key ->
-                            val currentPage = page
-                            when {
-                                currentPage != null -> when (currentPage) {
-                                    SettingsPage.NAMING -> NamingSettings(config) { applyConfig(it) }
-                                    SettingsPage.ALIASES -> AliasSettings(config) { applyConfig(it) }
-                                    SettingsPage.COOKIES -> CookieSettings(config) { applyConfig(it) }
-                                    SettingsPage.APPEARANCE -> AppearanceSettings(config) { applyConfig(it) }
-                                    SettingsPage.DOWNLOAD -> DownloadSettings(
+                    },
+                    content = { pad ->
+                        // 悬浮导航不占内容高度，这里额外留出空间，避免遮住列表末尾；大屏无悬浮栏
+                        val floatExtra = if (!immersive && !wideScreen && config.navStyle != "classic") 96.dp else 0.dp
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .layerBackdrop(backdrop)
+                                .padding(
+                                    top = pad.calculateTopPadding(),
+                                    bottom = pad.calculateBottomPadding() + floatExtra,
+                                ),
+                        ) {
+                            AnimatedContent(
+                                targetState = page?.name ?: tab.name,
+                                transitionSpec = {
+                                    (slideInHorizontally(animationSpec = PageSpring) { it / 8 } + fadeIn())
+                                        .togetherWith(slideOutHorizontally(animationSpec = PageSpring) { -it / 8 } + fadeOut())
+                                },
+                                label = "page",
+                            ) { key ->
+                                val currentPage = page
+                                when {
+                                    currentPage != null -> when (currentPage) {
+                                        SettingsPage.NAMING -> NamingSettings(config) { applyConfig(it) }
+                                        SettingsPage.ALIASES -> AliasSettings(config) { applyConfig(it) }
+                                        SettingsPage.COOKIES -> CookieSettings(config) { applyConfig(it) }
+                                        SettingsPage.APPEARANCE -> AppearanceSettings(config) { applyConfig(it) }
+                                        SettingsPage.DOWNLOAD -> DownloadSettings(
+                                            config = config,
+                                            onConfig = { applyConfig(it) },
+                                            rootLabel = sink.describe(),
+                                            onPickFolder = { treePicker.launch(null) },
+                                        )
+                                        SettingsPage.ABOUT -> AboutSettings { url -> openUrl(ctx, url) }
+                                    }
+                                    key == Tab.PARSE.name -> {
+                                        val clip = LocalClipboardManager.current
+                                        ParseScreen(controller, readClipboard = { clip.getText()?.text })
+                                    }
+                                    key == Tab.GALLERY.name -> GalleryScreen(
+                                        ctx = ctx,
                                         config = config,
                                         onConfig = { applyConfig(it) },
-                                        rootLabel = sink.describe(),
-                                        onPickFolder = { treePicker.launch(null) },
+                                        onMessage = { toast = it },
+                                        onImmersive = { immersive = it },
                                     )
-                                    SettingsPage.ABOUT -> AboutSettings { url -> openUrl(ctx, url) }
-                                }
-                                key == Tab.PARSE.name -> {
-                                    val clip = LocalClipboardManager.current
-                                    ParseScreen(controller, readClipboard = { clip.getText()?.text })
-                                }
-                                key == Tab.GALLERY.name -> GalleryScreen(
-                                    ctx = ctx,
-                                    config = config,
-                                    onConfig = { applyConfig(it) },
-                                    onMessage = { toast = it },
-                                    onImmersive = { immersive = it },
-                                )
-                                key == Tab.HISTORY.name -> HistoryScreen(
-                                    c = controller,
-                                    onExportCsv = { csv ->
-                                        scope.launch {
-                                            val name = exportCsv(ctx, csv)
-                                            toast = if (name == null) "导出失败" else "已导出到 Download/ParseHub/$name"
-                                        }
-                                    },
-                                    onOpenFiles = { dir, fileNames ->
-                                        scope.launch {
-                                            val items = withContext(Dispatchers.IO) {
-                                                resolveDownloadedMedia(ctx, dir, fileNames)
+                                    key == Tab.HISTORY.name -> HistoryScreen(
+                                        c = controller,
+                                        onExportCsv = { csv ->
+                                            scope.launch {
+                                                val name = exportCsv(ctx, csv)
+                                                toast = if (name == null) "导出失败" else "已导出到 Download/ParseHub/$name"
                                             }
-                                            if (items.isEmpty()) {
-                                                toast = "没找到已保存的媒体，确认已授权「所有文件访问」"
-                                            } else {
-                                                historyViewer = 0 to items
+                                        },
+                                        onOpenFiles = { dir, fileNames ->
+                                            scope.launch {
+                                                val items = withContext(Dispatchers.IO) {
+                                                    resolveDownloadedMedia(ctx, dir, fileNames)
+                                                }
+                                                if (items.isEmpty()) {
+                                                    toast = "没找到已保存的媒体，确认已授权「所有文件访问」"
+                                                } else {
+                                                    historyViewer = 0 to items
+                                                }
                                             }
-                                        }
-                                    },
-                                )
-                                else -> SettingsHome(config) { page = it }
+                                        },
+                                    )
+                                    else -> SettingsHome(config) { page = it }
+                                }
                             }
                         }
-                    }
-                    }   // Row (大屏侧栏 + 内容)
-                },
-            )
+                    },
+                )
+            }   // Box(weight)
+        }   // Row
 
-            Reveal(toast.isNotEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                    Card(Modifier.padding(24.dp), insideMargin = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text(toast, style = MiuixTheme.textStyles.body2)
-                    }
+        Reveal(toast.isNotEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                Card(Modifier.padding(24.dp), insideMargin = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text(toast, style = MiuixTheme.textStyles.body2)
                 }
             }
         }
+    }
 
         // 记录页「打开」→ 与图库一致的看图/播放覆盖层（盖在系统栏之上）
         androidx.compose.animation.AnimatedVisibility(

@@ -28,7 +28,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- 抖音/快手/微博/B站/头条/皮皮虾/最右/小红书 分享 → 本应用 -->
+            <!-- 抖音/快手/微博/B站/头条/皮皮虾/最右/小红书/TikTok/Instagram/X/Threads 分享 → 本应用 -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -59,6 +59,15 @@
                 <data android:scheme="https" android:host="douc.cc" />
                 <data android:scheme="https" android:host="www.coolapk.com" />
                 <data android:scheme="https" android:host="mp.weixin.qq.com" />
+                <data android:scheme="https" android:host="www.tiktok.com" />
+                <data android:scheme="https" android:host="vt.tiktok.com" />
+                <data android:scheme="https" android:host="vm.tiktok.com" />
+                <data android:scheme="https" android:host="www.instagram.com" />
+                <data android:scheme="https" android:host="instagram.com" />
+                <data android:scheme="https" android:host="x.com" />
+                <data android:scheme="https" android:host="twitter.com" />
+                <data android:scheme="https" android:host="www.threads.com" />
+                <data android:scheme="https" android:host="threads.com" />
             </intent-filter>
         </activity>
     </application>
