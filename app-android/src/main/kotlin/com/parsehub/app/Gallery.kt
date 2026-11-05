@@ -9,8 +9,10 @@ import android.widget.MediaController
 import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
@@ -95,6 +97,7 @@ private enum class SortMode(val label: String) {
  * 本地图库：文件夹筛选 + 类型/排序/列数 + 全屏查看（左右滑、双指缩放、双击放大、视频内嵌播放）
  * + 分享 / 删除 / 详情。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun GalleryScreen(ctx: Context, onMessage: (String) -> Unit) {
     var all by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
@@ -109,6 +112,9 @@ internal fun GalleryScreen(ctx: Context, onMessage: (String) -> Unit) {
     var viewerAt by remember { mutableStateOf<Int?>(null) }
     var showFolders by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    var selecting by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var confirmBatch by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result.values.any { it }) {
@@ -164,6 +170,30 @@ internal fun GalleryScreen(ctx: Context, onMessage: (String) -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(6.dp))
+
+        if (selecting) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "已选 ${selected.size}",
+                    style = MiuixTheme.textStyles.main,
+                    color = MiuixTheme.colorScheme.onBackground,
+                )
+                TextButton(text = "全选", onClick = { selected = shown.map { it.uri.toString() }.toSet() })
+                TextButton(text = "清空", onClick = { selected = emptySet() })
+                TextButton(text = "分享", onClick = {
+                    if (selected.isNotEmpty()) shareMediaList(ctx, shown.filter { selected.contains(it.uri.toString()) })
+                })
+                TextButton(text = "删除", onClick = { if (selected.isNotEmpty()) confirmBatch = true })
+                TextButton(text = "取消", onClick = {
+                    selecting = false
+                    selected = emptySet()
+                })
+            }
+        }
 
         // 文件夹 / 类型 / 排序 / 列数
         Row(
@@ -227,7 +257,20 @@ internal fun GalleryScreen(ctx: Context, onMessage: (String) -> Unit) {
                         Modifier
                             .aspectRatio(1f)
                             .background(MiuixTheme.colorScheme.surface)
-                            .clickable { viewerAt = index },
+                            .combinedClickable(
+                                onClick = {
+                                    val key = item.uri.toString()
+                                    if (selecting) {
+                                        selected = if (selected.contains(key)) selected - key else selected + key
+                                    } else {
+                                        viewerAt = index
+                                    }
+                                },
+                                onLongClick = {
+                                    selecting = true
+                                    selected = selected + item.uri.toString()
+                                },
+                            ),
                     ) {
                         if (item.isVideo) {
                             Text(
@@ -243,6 +286,16 @@ internal fun GalleryScreen(ctx: Context, onMessage: (String) -> Unit) {
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
                         )
+                        if (selected.contains(item.uri.toString())) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.28f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("✓", style = MiuixTheme.textStyles.title1, color = Color.White)
+                            }
+                        }
                     }
                 }
             }
@@ -285,6 +338,33 @@ internal fun GalleryScreen(ctx: Context, onMessage: (String) -> Unit) {
                             showFolders = false
                         })
                     }
+                }
+            }
+        }
+    }
+
+    if (confirmBatch) {
+        OverlayDialog(title = "删除选中的 ${selected.size} 个文件？", show = confirmBatch, onDismissRequest = { confirmBatch = false }) {
+            Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                Text(
+                    "自己下载的文件可以直接删除；其他应用管理的文件会被系统拒绝。",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = {
+                        confirmBatch = false
+                        var ok = 0
+                        shown.filter { selected.contains(it.uri.toString()) }.forEach {
+                            if (deleteMedia(ctx, it)) ok++
+                        }
+                        onMessage("已删除 $ok / ${selected.size} 个文件")
+                        selecting = false
+                        selected = emptySet()
+                        reload++
+                    }) { Text("删除", style = MiuixTheme.textStyles.button) }
+                    TextButton(text = "取消", onClick = { confirmBatch = false })
                 }
             }
         }
@@ -560,6 +640,21 @@ private fun shareMedia(ctx: Context, item: MediaItem) {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         ctx.startActivity(Intent.createChooser(intent, "分享"))
+    } catch (_: Exception) {
+    }
+}
+
+private fun shareMediaList(ctx: Context, items: List<MediaItem>) {
+    if (items.isEmpty()) return
+    try {
+        val uris = ArrayList(items.map { it.uri })
+        val anyVideo = items.any { it.isVideo }
+        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = if (anyVideo) "video/*" else "image/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        ctx.startActivity(Intent.createChooser(intent, "分享 ${items.size} 个文件"))
     } catch (_: Exception) {
     }
 }
