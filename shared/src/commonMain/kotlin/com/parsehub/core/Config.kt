@@ -38,6 +38,11 @@ data class AppConfig(
     val downloadRootDir: String = "",
     /** 用户通过系统目录选择器指定的保存位置（SAF 树 URI，空 = 用媒体库默认路径） */
     val treeUri: String = "",
+    /** 图库偏好（跨重启保留）：列数 / 排序 / 类型筛选 / 筛选面板是否展开 */
+    val galleryColumns: Int = 3,
+    val gallerySort: String = "newest",
+    val galleryFilter: String = "all",
+    val galleryOpenPanel: Boolean = false,
 ) {
     /** 取出该平台当前应使用的 Cookie（轮换） */
     fun cookieFor(platformKey: String, turn: Int): String {

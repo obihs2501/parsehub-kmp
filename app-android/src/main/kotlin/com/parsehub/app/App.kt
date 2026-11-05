@@ -16,9 +16,14 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -143,31 +148,35 @@ fun App(sharedText: MutableState<String>) {
             Scaffold(
                 topBar = {
                     if (!immersive) {
-                        SmallTopAppBar(
-                            title = page?.title ?: tab.title,
-                            navigationIcon = {
-                                if (page != null) {
-                                    IconButton(onClick = { page = null }) {
-                                        Icon(MiuixIcons.Regular.Back, contentDescription = "返回")
+                        Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
+                            SmallTopAppBar(
+                                title = page?.title ?: tab.title,
+                                navigationIcon = {
+                                    if (page != null) {
+                                        IconButton(onClick = { page = null }) {
+                                            Icon(MiuixIcons.Regular.Back, contentDescription = "返回")
+                                        }
                                     }
-                                }
-                            },
-                        )
+                                },
+                            )
+                        }
                     }
                 },
                 bottomBar = {
                     if (!immersive) {
-                        NavigationBar {
-                            Tab.entries.forEach { t ->
-                                NavigationBarItem(
-                                    selected = page == null && tab == t,
-                                    onClick = {
-                                        page = null
-                                        tab = t
-                                    },
-                                    icon = t.icon,
-                                    label = t.title,
-                                )
+                        Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                            NavigationBar {
+                                Tab.entries.forEach { t ->
+                                    NavigationBarItem(
+                                        selected = page == null && tab == t,
+                                        onClick = {
+                                            page = null
+                                            tab = t
+                                        },
+                                        icon = t.icon,
+                                        label = t.title,
+                                    )
+                                }
                             }
                         }
                     }
@@ -208,6 +217,8 @@ fun App(sharedText: MutableState<String>) {
                                 key == Tab.TASKS.name -> TasksScreen(controller)
                                 key == Tab.GALLERY.name -> GalleryScreen(
                                     ctx = ctx,
+                                    config = config,
+                                    onConfig = { applyConfig(it) },
                                     onMessage = { toast = it },
                                     onImmersive = { immersive = it },
                                 )

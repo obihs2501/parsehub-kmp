@@ -30,11 +30,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -67,6 +71,7 @@ import coil3.compose.AsyncImage
 import com.parsehub.core.Fmt
 import com.parsehub.core.dateTime
 import com.parsehub.ui.EmptyHint
+import com.parsehub.ui.HairLine
 import com.parsehub.ui.InfoRow
 import com.parsehub.ui.PageHero
 import com.parsehub.ui.Reveal
@@ -102,13 +107,17 @@ internal data class MediaItem(
     val durationMs: Long,
 )
 
-private enum class MediaFilter(val label: String) { ALL("全部"), IMAGE("图片"), VIDEO("视频") }
+private enum class MediaFilter(val key: String, val label: String) {
+    ALL("all", "全部"),
+    IMAGE("image", "图片"),
+    VIDEO("video", "视频"),
+}
 
-private enum class SortMode(val label: String) {
-    NEWEST("最新"),
-    OLDEST("最旧"),
-    NAME("名称"),
-    SIZE("大小"),
+private enum class SortMode(val key: String, val label: String) {
+    NEWEST("newest", "最新"),
+    OLDEST("oldest", "最旧"),
+    NAME("name", "名称"),
+    SIZE("size", "大小"),
 }
 
 /**
@@ -120,6 +129,8 @@ private enum class SortMode(val label: String) {
 @Composable
 internal fun GalleryScreen(
     ctx: Context,
+    config: AppConfig,
+    onConfig: (AppConfig) -> Unit,
     onMessage: (String) -> Unit,
     onImmersive: (Boolean) -> Unit,
 ) {
@@ -129,16 +140,20 @@ internal fun GalleryScreen(
     var reload by remember { mutableStateOf(0) }
 
     var stack by remember { mutableStateOf<List<String>>(emptyList()) }
-    var filter by remember { mutableStateOf(MediaFilter.ALL) }
-    var sort by remember { mutableStateOf(SortMode.NEWEST) }
-    var columns by remember { mutableStateOf(3) }
+    var filter by remember {
+        mutableStateOf(MediaFilter.entries.firstOrNull { it.key == config.galleryFilter } ?: MediaFilter.ALL)
+    }
+    var sort by remember {
+        mutableStateOf(SortMode.entries.firstOrNull { it.key == config.gallerySort } ?: SortMode.NEWEST)
+    }
+    var columns by remember { mutableStateOf(config.galleryColumns.coerceIn(2, 6)) }
     var visibleCount by remember { mutableStateOf(90) }
     var query by remember { mutableStateOf("") }
     var viewerAt by remember { mutableStateOf<Int?>(null) }
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var confirmBatch by remember { mutableStateOf(false) }
-    var panelOpen by remember { mutableStateOf(true) }
+    var panelOpen by remember { mutableStateOf(config.galleryOpenPanel) }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result.values.any { it }) {
@@ -272,7 +287,14 @@ internal fun GalleryScreen(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             SmallTitle(text = "搜索与筛选")
             Spacer(Modifier.weight(1f))
-            TextButton(text = if (panelOpen) "收起" else "展开", onClick = { panelOpen = !panelOpen })
+            TextButton(
+                text = if (panelOpen) "收起" else "展开",
+                onClick = {
+                    val next = !panelOpen
+                    panelOpen = next
+                    onConfig(config.copy(galleryOpenPanel = next))
+                },
+            )
         }
         Reveal(panelOpen) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -289,16 +311,23 @@ internal fun GalleryScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     MediaFilter.entries.forEach { f ->
-                        if (f == filter) Button(onClick = { filter = f }) { Text(f.label, style = MiuixTheme.textStyles.button) }
-                        else TextButton(text = f.label, onClick = { filter = f })
+                        if (f == filter) {
+                            Button(onClick = { filter = f; onConfig(config.copy(galleryFilter = f.key)) }) {
+                                Text(f.label, style = MiuixTheme.textStyles.button)
+                            }
+                        } else {
+                            TextButton(text = f.label, onClick = { filter = f; onConfig(config.copy(galleryFilter = f.key)) })
+                        }
                     }
                     TextButton(text = "排序：${sort.label}", onClick = {
-                        sort = when (sort) {
+                        val next = when (sort) {
                             SortMode.NEWEST -> SortMode.OLDEST
                             SortMode.OLDEST -> SortMode.NAME
                             SortMode.NAME -> SortMode.SIZE
                             SortMode.SIZE -> SortMode.NEWEST
                         }
+                        sort = next
+                        onConfig(config.copy(gallerySort = next.key))
                     })
                 }
                 Row(
@@ -312,8 +341,13 @@ internal fun GalleryScreen(
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
                     listOf(2, 3, 4, 5, 6).forEach { n ->
-                        if (n == columns) Button(onClick = { columns = n }) { Text("$n", style = MiuixTheme.textStyles.button) }
-                        else TextButton(text = "$n", onClick = { columns = n })
+                        if (n == columns) {
+                            Button(onClick = { columns = n; onConfig(config.copy(galleryColumns = n)) }) {
+                                Text("$n", style = MiuixTheme.textStyles.button)
+                            }
+                        } else {
+                            TextButton(text = "$n", onClick = { columns = n; onConfig(config.copy(galleryColumns = n)) })
+                        }
                     }
                 }
             }
@@ -389,6 +423,7 @@ internal fun GalleryScreen(
                     }
                 }
                 if (shown.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) { HairLine() }
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Row(
                             Modifier.fillMaxWidth(),
@@ -540,28 +575,26 @@ internal fun GalleryScreen(
 /** 文件夹卡片：名称 + 项数，点击进入下一级 */
 @Composable
 private fun FolderCard(name: String, count: Int, onOpen: () -> Unit) {
-    Column(
-        Modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MiuixTheme.colorScheme.surface)
-            .clickable { onOpen() }
-            .padding(8.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Card(
+        Modifier.aspectRatio(1f).clickable { onOpen() },
+        insideMargin = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
     ) {
-        Icon(MiuixIcons.Regular.Folder, contentDescription = null)
+        Spacer(Modifier.weight(1f))
+        Icon(MiuixIcons.Regular.Folder, contentDescription = null, modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(6.dp))
         Text(
             name,
             style = MiuixTheme.textStyles.footnote2,
             color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
         )
         Text(
             "$count 项",
             style = MiuixTheme.textStyles.footnote2,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
         )
+        Spacer(Modifier.weight(1f))
     }
 }
 
@@ -603,7 +636,7 @@ private fun ViewerOverlay(
 
         AnimatedVisibility(
             visible = chrome,
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars),
             enter = fadeIn(animationSpec = tween(160)),
             exit = fadeOut(animationSpec = tween(200)),
         ) {
@@ -635,7 +668,7 @@ private fun ViewerOverlay(
 
         AnimatedVisibility(
             visible = chrome,
-            modifier = Modifier.align(Alignment.BottomCenter),
+            modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars),
             enter = fadeIn(animationSpec = tween(160)),
             exit = fadeOut(animationSpec = tween(200)),
         ) {
