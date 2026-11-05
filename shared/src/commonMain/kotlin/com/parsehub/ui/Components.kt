@@ -30,6 +30,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
+import coil3.request.ImageRequest
+import com.parsehub.net.Http
 import com.parsehub.core.Fmt
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
@@ -87,17 +92,38 @@ fun InfoRow(label: String, value: String) {
     }
 }
 
-/** 缩略图：加载中给同尺寸占位，避免布局跳动 */
+/** Shared request policy for parsed covers, thumbnails and the Android full-size viewer. */
 @Composable
-fun Thumb(url: String?, modifier: Modifier = Modifier, radius: Int = 12) {
-    val shape = RoundedCornerShape(radius.dp)
-    Box(modifier.clip(shape).background(MiuixTheme.colorScheme.surface)) {
+fun parsedImageRequest(url: String?, referer: String): ImageRequest {
+    val context = LocalPlatformContext.current
+    return androidx.compose.runtime.remember(context, url, referer) {
+        ImageRequest.Builder(context)
+            .data(url)
+            .httpHeaders(
+                NetworkHeaders.Builder()
+                    .set("User-Agent", Http.UA)
+                    .set("Referer", referer)
+                    .build(),
+            )
+            .build()
+    }
+}
+
+/** A bounded, uncropped cover; portrait images retain their entire frame. */
+@Composable
+fun Thumb(
+    url: String?,
+    modifier: Modifier = Modifier,
+    radius: Int = 12,
+    referer: String = "",
+) {
+    Box(modifier.clip(RoundedCornerShape(radius.dp)).background(MiuixTheme.colorScheme.surface)) {
         if (!url.isNullOrEmpty()) {
             AsyncImage(
-                model = url,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().height(200.dp),
+                model = parsedImageRequest(url, referer),
+                contentDescription = "封面，点击查看大图",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().height(300.dp),
             )
         }
     }

@@ -18,6 +18,20 @@ class DownloadPlanTest {
         assertEquals(1, jobs.map { it.relDir }.distinct().size)
     }
 
+    @Test fun selectedImagesKeepOriginalIndexesAndLiveCompanions() {
+        val album = result().copy(images = listOf(
+            ImageItem(0, "https://example.test/first", "jpg", null, 10, 10),
+            ImageItem(4, "https://example.test/fifth", "jpg", "https://example.test/fifth-live", 10, 10),
+        ))
+        val jobs = DownloadPlan(
+            AppConfig(fileTemplate = "{type}_{index}"), "作者", emptySet(), true, emptyList(), setOf(4),
+        ).buildJobs(album)
+        assertEquals(listOf("image", "live"), jobs.map { it.kind })
+        assertEquals(listOf("图片_5.jpg", "实况_5.mp4"), jobs.map { it.name })
+        assertEquals(listOf(album.images[1].url, album.images[1].live), jobs.map { it.urls.single() })
+        assertTrue(DownloadPlan(AppConfig(), "作者", emptySet(), true, emptyList(), emptySet()).buildJobs(album).isEmpty())
+    }
+
     @Test fun aliasAndCreatorTemplateAreShared() {
         val config = AppConfig(folderTemplate = "{creator}", aliases = listOf(AuthorAlias("douyin", "id", "合并作者")))
         val creator = config.creatorOf("douyin", "id", "账号")

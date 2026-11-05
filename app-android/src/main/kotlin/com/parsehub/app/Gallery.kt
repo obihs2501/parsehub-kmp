@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
@@ -65,6 +66,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
+import com.parsehub.ui.parsedImageRequest
 import com.parsehub.ui.LocalPageBottomPadding
 import com.parsehub.core.AppConfig
 import com.parsehub.core.Fmt
@@ -75,6 +77,7 @@ import com.parsehub.ui.InfoRow
 import com.parsehub.ui.PageHero
 import com.parsehub.ui.Reveal
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Button
@@ -863,13 +866,24 @@ private fun ViewerOverlay(
  */
 @Composable
 private fun ZoomableImage(item: MediaItem, onTap: () -> Unit, onZoomChange: (Boolean) -> Unit) {
+    ZoomableImageBody(item.uri, item.name, onTap, onZoomChange)
+}
+
+/** Shared zoom/pan/double-tap primitive for local media and parsed remote images. */
+@Composable
+private fun ZoomableImageBody(
+    model: Any?,
+    description: String,
+    onTap: () -> Unit,
+    onZoomChange: (Boolean) -> Unit,
+) {
     val state = rememberZoomableState(ZoomSpec(maxZoomFactor = 6f))
     val zoomed = (state.zoomFraction ?: 0f) > 0.01f
     LaunchedEffect(zoomed) { onZoomChange(zoomed) }
 
     AsyncImage(
-        model = item.uri,
-        contentDescription = item.name,
+        model = model,
+        contentDescription = description,
         contentScale = ContentScale.Fit,
         modifier = Modifier
             .fillMaxSize()
@@ -879,6 +893,71 @@ private fun ZoomableImage(item: MediaItem, onTap: () -> Unit, onZoomChange: (Boo
                 onClick = { onTap() },
             ),
     )
+}
+
+/** Parsed remote images do not offer local-media delete/share actions. */
+@Composable
+internal fun ParsedImageViewer(
+    urls: List<String>,
+    startIndex: Int,
+    referer: String,
+    onClose: () -> Unit,
+    onImmersive: (Boolean) -> Unit,
+) {
+    if (urls.isEmpty()) return
+    val pager = rememberPagerState(initialPage = startIndex.coerceIn(urls.indices)) { urls.size }
+    val zoomedPages = remember { mutableStateMapOf<Int, Boolean>() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    BackHandler { onClose() }
+    DisposableEffect(Unit) {
+        onImmersive(true)
+        onDispose { onImmersive(false) }
+    }
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        HorizontalPager(
+            state = pager,
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = zoomedPages[pager.currentPage] != true,
+        ) { index ->
+            ZoomableImageBody(
+                model = parsedImageRequest(urls[index], referer),
+                description = "第 ${index + 1} 张，共 ${urls.size} 张",
+                onTap = {},
+                onZoomChange = { zoomedPages[index] = it },
+            )
+            DisposableEffect(index) {
+                onDispose { zoomedPages.remove(index) }
+            }
+        }
+        Card(
+            Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            insideMargin = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose) {
+                    Icon(MiuixIcons.Regular.Close, contentDescription = "关闭大图")
+                }
+                Text("${pager.currentPage + 1} / ${urls.size}", style = MiuixTheme.textStyles.body2)
+            }
+        }
+        if (urls.size > 1) {
+            Card(
+                Modifier.align(Alignment.BottomCenter)
+                    .windowInsetsPadding(WindowInsets.navigationBars).padding(16.dp),
+                insideMargin = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    TextButton(text = "上一张", enabled = pager.currentPage > 0, onClick = {
+                        scope.launch { pager.animateScrollToPage(pager.currentPage - 1) }
+                    })
+                    TextButton(text = "下一张", enabled = pager.currentPage < urls.lastIndex, onClick = {
+                        scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
+                    })
+                }
+            }
+        }
+    }
 }
 
 @Composable

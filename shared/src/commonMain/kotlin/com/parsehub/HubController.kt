@@ -62,6 +62,8 @@ class HubController(
     var creator by mutableStateOf("")
     var pick by mutableStateOf<Set<Int>>(emptySet())
     var imagesOn by mutableStateOf(initialConfig.imagesByDefault)
+    var imagePick by mutableStateOf<Set<Int>?>(null)
+        private set
     var auxOn by mutableStateOf<List<Boolean>>(emptyList())
 
     var tasks by mutableStateOf<List<TaskRow>>(emptyList())
@@ -110,6 +112,7 @@ class HubController(
                 creator = config.creatorOf(r.platform.key, r.authorId, r.author)
                 pick = defaultPick(r)
                 imagesOn = config.imagesByDefault && r.images.isNotEmpty()
+                imagePick = null
                 auxOn = r.aux.map { false }
                 note = buildString {
                     append("解析完成 · ").append(r.platform.label)
@@ -153,7 +156,7 @@ class HubController(
 
     fun hasSelection(): Boolean =
         pick.isNotEmpty() ||
-            (result?.images?.isNotEmpty() == true && imagesOn) ||
+            (imagesOn && result?.images?.any { isImageSelected(it.index) } == true) ||
             auxOn.any { it }
 
     fun togglePick(idx: Int) {
@@ -164,7 +167,22 @@ class HubController(
         auxOn = auxOn.toMutableList().also { it[i] = !(it.getOrElse(i) { false }) }
     }
 
-    private fun downloadPlan() = DownloadPlan(config, creator, pick, imagesOn, auxOn)
+    fun isImageSelected(index: Int): Boolean = imagePick?.contains(index) ?: true
+
+    fun toggleImage(index: Int) {
+        val all = result?.images?.map { it.index }?.toSet() ?: return
+        if (index !in all) return
+        val selected = if (imagesOn) imagePick ?: all else emptySet()
+        imagePick = if (index in selected) selected - index else selected + index
+        imagesOn = true
+    }
+
+    fun selectAllImages(selected: Boolean) {
+        imagePick = if (selected) null else emptySet()
+        imagesOn = true
+    }
+
+    private fun downloadPlan() = DownloadPlan(config, creator, pick, imagesOn, auxOn, imagePick)
 
     fun folderName(r: ParseResult): String = downloadPlan().folderName(r)
 

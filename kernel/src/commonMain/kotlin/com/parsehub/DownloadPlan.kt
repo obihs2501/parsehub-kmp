@@ -44,6 +44,8 @@ class DownloadPlan(
     private val pick: Set<Int>,
     private val imagesOn: Boolean,
     private val auxOn: List<Boolean>,
+    // null keeps all images selected for existing callers.
+    private val imagePick: Set<Int>? = null,
 ) {
     // ------------------------------------------------------------ 命名与归档
     private fun values(r: ParseResult, kind: String, index: Int): Map<String, String> = mapOf(
@@ -76,6 +78,7 @@ class DownloadPlan(
         val jobs = mutableListOf<JobSpec>()
         if (imagesOn) {
             for (im in r.images) {
+                if (imagePick != null && im.index !in imagePick) continue
                 jobs += JobSpec(dir, fileName(r, "图片", im.index + 1, im.ext), listOf(im.url), im.ext, "image")
                 val lv = im.live
                 if (!lv.isNullOrEmpty()) {

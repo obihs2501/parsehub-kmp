@@ -28,6 +28,7 @@ kotlin {
             implementation(libs.miuix.preference)
             implementation(libs.miuix.icons)
             implementation(libs.coil.compose)
+            implementation(libs.coil.network.core)
         }
         androidMain.dependencies {
             implementation(libs.coil.network.okhttp)

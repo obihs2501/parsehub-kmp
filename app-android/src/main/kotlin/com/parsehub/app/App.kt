@@ -126,6 +126,7 @@ fun App(sharedText: MutableState<String>) {
     var page by remember { mutableStateOf<SettingsPage?>(null) }
     var toast by remember { mutableStateOf("") }
     var immersive by remember { mutableStateOf(false) }
+    var parsedViewer by remember { mutableStateOf<Triple<List<String>, Int, String>?>(null) }
     // 记录页点「打开」时，用与图库相同的看图覆盖层预览已下载的图片/视频
     var historyViewer by remember { mutableStateOf<Pair<Int, List<MediaItem>>?>(null) }
 
@@ -361,7 +362,14 @@ fun App(sharedText: MutableState<String>) {
                                         }
                                         key == Tab.PARSE.name -> {
                                             val clip = LocalClipboardManager.current
-                                            ParseScreen(controller, readClipboard = { clip.getText()?.text })
+                                            ParseScreen(
+                                                controller,
+                                                readClipboard = { clip.getText()?.text },
+                                                enableImageSelection = true,
+                                                onPreviewImages = { urls, index, referer ->
+                                                    parsedViewer = Triple(urls, index, referer)
+                                                },
+                                            )
                                         }
                                         key == Tab.GALLERY.name -> GalleryScreen(
                                             ctx = ctx,
@@ -409,6 +417,16 @@ fun App(sharedText: MutableState<String>) {
             }
         }
     }
+
+        parsedViewer?.let { preview ->
+            ParsedImageViewer(
+                urls = preview.first,
+                startIndex = preview.second,
+                referer = preview.third,
+                onClose = { parsedViewer = null },
+                onImmersive = { immersive = it },
+            )
+        }
 
         // 记录页「打开」→ 与图库一致的看图/播放覆盖层（盖在系统栏之上）
         androidx.compose.animation.AnimatedVisibility(

@@ -60,7 +60,18 @@ impl Backend {
     }
 
     fn launch(&self, java: PathBuf, jar: PathBuf, data: PathBuf) -> Result<Endpoint, String> {
+        // Tauri 1 canonicalizes its resource directory, producing \?\ paths on
+        // Windows. Java can read the manifest from that spelling but fail to
+        // load classes through its file-URL based classpath. Pass ordinary
+        // absolute disk/UNC paths across the process boundary instead.
+        let java = java_path(java);
+        let jar = java_path(jar);
+        let data = java_path(data);
         if !java.is_file() || !jar.is_file() { return Err("Bundled runtime or sidecar is missing; run scripts/package-windows.ps1 before building".into()); }
+        if std::env::var_os("PARSEHUB_DESKTOP_SMOKE_TEST").is_some() {
+            eprintln!("Sidecar launch: java={java:?}, jar={jar:?}, data={data:?}, jar_bytes={:?}",
+                fs::metadata(&jar).map(|m| m.len()));
+        }
         fs::create_dir_all(&data).map_err(|e| e.to_string())?;
         let log = OpenOptions::new().create(true).append(true).open(data.join("sidecar-stderr.log"))
             .map_err(|e| e.to_string())?;
@@ -174,6 +185,27 @@ impl Backend {
 }
 
 impl Drop for Backend { fn drop(&mut self) { let _ = self.shutdown(); } }
+
+// Preserve non-Unicode Windows paths and leave non-filesystem device prefixes alone.
+fn java_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)] {
+        use std::path::{Component, Prefix};
+        let mut components = path.components();
+        let mut ordinary = match components.next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                Prefix::VerbatimDisk(drive) => PathBuf::from(format!("{}:\\", drive as char)),
+                Prefix::VerbatimUNC(server, share) => PathBuf::from(r"\\").join(server).join(share),
+                _ => return path,
+            },
+            _ => return path,
+        };
+        if !matches!(components.next(), Some(Component::RootDir)) { return path; }
+        ordinary.push(components.as_path());
+        return ordinary;
+    }
+    #[cfg(not(windows))]
+    path
+}
 
 fn validate_route(method: &str, path: &str) -> Result<(), String> {
     if path.len() > 128 || method.len() > 6 { return Err("Unsupported backend route or method".into()); }
