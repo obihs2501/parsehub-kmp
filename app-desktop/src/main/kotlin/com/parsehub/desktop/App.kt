@@ -244,16 +244,41 @@ private fun OutDirBar(outDir: String, onPick: () -> Unit, onOpen: () -> Unit) {
 private fun DesktopGallery(root: File, onMessage: (String) -> Unit) {
     var files by remember { mutableStateOf<List<LocalFile>>(emptyList()) }
     var reload by remember { mutableStateOf(0) }
+    var newestFirst by remember { mutableStateOf(true) }
+    var columns by remember { mutableStateOf(4) }
+    var subFolder by remember { mutableStateOf("") }
+
     LaunchedEffect(root, reload) {
         files = withContext(Dispatchers.IO) { scanLocal(root) }
+    }
+
+    val subFolders = remember(files, root) {
+        files.map { relFolder(root, it.file) }.filter { it.isNotEmpty() }.distinct().sorted()
+    }
+    val shown = remember(files, subFolder, newestFirst) {
+        val base = if (subFolder.isEmpty()) files else files.filter { relFolder(root, it.file) == subFolder }
+        if (newestFirst) base.sortedByDescending { it.file.lastModified() }
+        else base.sortedBy { it.file.name.lowercase() }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
-                PageHero("本地图库", "${root.absolutePath} · ${files.size} 项")
+                PageHero("本地图库", "${shown.size} 项 · ${root.absolutePath}")
             }
             TextButton(text = "刷新", onClick = { reload++ })
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(
+                text = "范围：" + if (subFolder.isEmpty()) "全部" else subFolder,
+                onClick = {
+                    if (subFolders.isEmpty()) return@TextButton
+                    val i = subFolders.indexOf(subFolder)
+                    subFolder = if (i >= subFolders.lastIndex) "" else subFolders[i + 1]
+                },
+            )
+            TextButton(text = "排序：" + if (newestFirst) "最新" else "名称", onClick = { newestFirst = !newestFirst })
+            TextButton(text = "列数：$columns", onClick = { columns = if (columns >= 6) 2 else columns + 1 })
         }
         if (files.isEmpty()) {
             Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(20.dp)) {
@@ -265,13 +290,13 @@ private fun DesktopGallery(root: File, onMessage: (String) -> Unit) {
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(140.dp),
+                columns = GridCells.Fixed(columns),
                 modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                items(files) { item ->
+                items(shown) { item ->
                     Column(
                         Modifier
                             .clip(RoundedCornerShape(12.dp))
@@ -328,7 +353,14 @@ private fun scanLocal(root: File): List<LocalFile> {
         }
         if (out.size > 800) return out
     }
-    return out.sortedByDescending { it.file.lastModified() }
+    return out
+}
+
+/** 文件相对扫描根目录的上一级目录名，用作筛选标签 */
+private fun relFolder(root: File, file: File): String {
+    val rel = file.parentFile?.absolutePath?.removePrefix(root.absolutePath) ?: return ""
+    val parts = rel.split('/', '\\').filter { it.isNotEmpty() }
+    return parts.lastOrNull() ?: ""
 }
 
 private fun loadThumb(file: File, max: Int = 320) = try {
