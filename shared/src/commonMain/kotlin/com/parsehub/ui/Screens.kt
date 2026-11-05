@@ -1,6 +1,7 @@
 package com.parsehub.ui
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,7 @@ import com.parsehub.HubController
 import com.parsehub.core.Fmt
 import com.parsehub.core.HistoryEntry
 import com.parsehub.core.Platform
+import com.parsehub.core.decodeFileNames
 import com.parsehub.core.dateTime
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
@@ -361,9 +363,13 @@ fun TasksScreen(c: HubController) {
     }
 }
 
-/** 解析 / 下载记录：平台 → 作者 两级折叠 */
+/** 解析 / 下载记录：平台 → 作者 两级折叠；下载记录可点开已保存的媒体 */
 @Composable
-fun HistoryScreen(c: HubController, onExportCsv: (String) -> Unit) {
+fun HistoryScreen(
+    c: HubController,
+    onOpenFiles: ((dir: String, fileNames: List<String>) -> Unit)? = null,
+    onExportCsv: (String) -> Unit,
+) {
     val tick = c.historyTick
     val entries = remember(tick) { c.historyEntries() }
     var expandedPlatform by remember { mutableStateOf<String?>(null) }
@@ -406,7 +412,7 @@ fun HistoryScreen(c: HubController, onExportCsv: (String) -> Unit) {
                                 }
                                 Reveal(expandedAuthor == key) {
                                     Column {
-                                        items.forEach { HistoryRow(it) }
+                                        items.forEach { HistoryRow(it, onOpenFiles) }
                                     }
                                 }
                             }
@@ -447,9 +453,19 @@ private fun GroupRow(
 }
 
 @Composable
-private fun HistoryRow(e: HistoryEntry) {
+private fun HistoryRow(
+    e: HistoryEntry,
+    onOpenFiles: ((dir: String, fileNames: List<String>) -> Unit)?,
+) {
+    val canOpen = onOpenFiles != null && e.kind == "download" && e.dir.isNotBlank() &&
+        (e.fileNames.isNotBlank() || e.files > 0)
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp)
+            .then(if (canOpen) Modifier.clickable {
+                onOpenFiles?.invoke(e.dir, decodeFileNames(e.fileNames))
+            } else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Dot(e.status == "ok")
@@ -467,6 +483,13 @@ private fun HistoryRow(e: HistoryEntry) {
                     (if (e.dir.isNotBlank()) " · ${e.dir}" else ""),
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        if (canOpen) {
+            Text(
+                "打开 ›",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.primary,
             )
         }
     }

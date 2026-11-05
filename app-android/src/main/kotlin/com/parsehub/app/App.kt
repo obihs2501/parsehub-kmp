@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -56,7 +57,6 @@ import com.parsehub.ui.ParseScreen
 import com.parsehub.ui.Reveal
 import com.parsehub.ui.SettingsHome
 import com.parsehub.ui.SettingsPage
-import com.parsehub.ui.TasksScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -71,7 +71,6 @@ import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Download
 import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.GridView
 import top.yukonga.miuix.kmp.icon.extended.Link
@@ -81,12 +80,15 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
+import top.yukonga.miuix.kmp.basic.NavigationRail
+import top.yukonga.miuix.kmp.basic.NavigationRailItem
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalWindowInfo
 import android.os.Build
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -94,7 +96,6 @@ import androidx.compose.runtime.DisposableEffect
 
 private enum class Tab(val title: String, val icon: ImageVector) {
     PARSE("解析", MiuixIcons.Regular.Link),
-    TASKS("下载", MiuixIcons.Regular.Download),
     GALLERY("图库", MiuixIcons.Regular.GridView),
     HISTORY("记录", MiuixIcons.Regular.Folder),
     SETTINGS("设置", MiuixIcons.Regular.Settings),
@@ -120,6 +121,8 @@ fun App(sharedText: MutableState<String>) {
     var page by remember { mutableStateOf<SettingsPage?>(null) }
     var toast by remember { mutableStateOf("") }
     var immersive by remember { mutableStateOf(false) }
+    // 记录页点「打开」时，用与图库相同的看图覆盖层预览已下载的图片/视频
+    var historyViewer by remember { mutableStateOf<Pair<Int, List<MediaItem>>?>(null) }
 
     // 系统栏图标：浅色页面用深色图标，深色主题 / 看图时用白色图标
     val window = remember(ctx) { ctx.findActivity()?.window }
@@ -193,6 +196,9 @@ fun App(sharedText: MutableState<String>) {
             drawContent()
         }
         val glass = config.navStyle == "glass" && isRuntimeShaderSupported()
+        // 大屏（平板 / 横屏）按 Miuix 官方自适应：底栏改为左侧 NavigationRail
+        val size = LocalWindowInfo.current.containerDpSize
+        val wideScreen = size.width >= 840.dp || (size.width >= 600.dp && size.height / size.width < 1.2f)
 
         Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
             Scaffold(
@@ -213,12 +219,55 @@ fun App(sharedText: MutableState<String>) {
                     }
                 },
                 bottomBar = {
-                    if (!immersive) {
-                        when (config.navStyle) {
-                            "classic" -> Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
-                                NavigationBar {
+                    // 贴底导航用 bottomBar，Scaffold 会把它的高度从内容区里扣掉；大屏改用侧栏
+                    if (!immersive && !wideScreen && config.navStyle == "classic") {
+                        Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                            NavigationBar {
+                                Tab.entries.forEach { t ->
+                                    NavigationBarItem(
+                                        selected = page == null && tab == t,
+                                        onClick = { page = null; tab = t },
+                                        icon = t.icon,
+                                        label = t.title,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                floatingToolbar = {
+                    // 悬浮 / 液态玻璃导航用 floatingToolbar 叠在内容之上；大屏改用侧栏
+                    if (!immersive && !wideScreen && config.navStyle != "classic") {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .windowInsetsPadding(WindowInsets.navigationBars)
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            // 外层 Box 尺寸跟随 FloatingNavigationBar 自身高度，
+                            // textureBlur 才能画出与胶囊一致的模糊范围（不再过高/拉伸）
+                            Box(
+                                if (glass) {
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .textureBlur(
+                                            backdrop = backdrop,
+                                            shape = RoundedCornerShape(50),
+                                            blurRadius = 22f,
+                                        )
+                                } else {
+                                    Modifier.fillMaxWidth()
+                                },
+                            ) {
+                                FloatingNavigationBar(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = if (glass) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
+                                    horizontalOutSidePadding = 0.dp,
+                                    defaultWindowInsetsPadding = false,
+                                ) {
                                     Tab.entries.forEach { t ->
-                                        NavigationBarItem(
+                                        FloatingNavigationBarItem(
                                             selected = page == null && tab == t,
                                             onClick = { page = null; tab = t },
                                             icon = t.icon,
@@ -227,51 +276,38 @@ fun App(sharedText: MutableState<String>) {
                                     }
                                 }
                             }
-                            else -> Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .windowInsetsPadding(WindowInsets.navigationBars)
-                                    .padding(bottom = 14.dp),
-                                contentAlignment = Alignment.BottomCenter,
-                            ) {
-                                Box(
-                                    if (glass) {
-                                        Modifier
-                                            .fillMaxWidth(0.86f)
-                                            .textureBlur(
-                                                backdrop = backdrop,
-                                                shape = RoundedCornerShape(50),
-                                                blurRadius = 22f,
-                                            )
-                                    } else {
-                                        Modifier.fillMaxWidth(0.86f)
-                                    },
-                                ) {
-                                    FloatingNavigationBar(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        color = if (glass) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
-                                        horizontalOutSidePadding = 0.dp,
-                                    ) {
-                                        Tab.entries.forEach { t ->
-                                            FloatingNavigationBarItem(
-                                                selected = page == null && tab == t,
-                                                onClick = { page = null; tab = t },
-                                                icon = t.icon,
-                                                label = t.title,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 },
                 content = { pad ->
+                    // 悬浮导航不占内容高度，这里额外留出空间，避免遮住列表末尾；大屏无悬浮栏
+                    val floatExtra = if (!immersive && !wideScreen && config.navStyle != "classic") 84.dp else 0.dp
+                    Row(Modifier.fillMaxSize()) {
+                    // 大屏：左侧固定侧栏（Miuix 官方自适应），底栏自动隐藏
+                    if (wideScreen && !immersive) {
+                        NavigationRail(
+                            expanded = true,
+                            defaultWindowInsetsPadding = false,
+                        ) {
+                            Tab.entries.forEach { t ->
+                                NavigationRailItem(
+                                    selected = page == null && tab == t,
+                                    onClick = { page = null; tab = t },
+                                    icon = t.icon,
+                                    label = t.title,
+                                )
+                            }
+                        }
+                    }
                     Box(
                         Modifier
+                            .weight(1f)
                             .fillMaxSize()
                             .layerBackdrop(backdrop)
-                            .padding(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding()),
+                            .padding(
+                                top = pad.calculateTopPadding(),
+                                bottom = pad.calculateBottomPadding() + floatExtra,
+                            ),
                     ) {
                         AnimatedContent(
                             targetState = page?.name ?: tab.name,
@@ -300,7 +336,6 @@ fun App(sharedText: MutableState<String>) {
                                     val clip = LocalClipboardManager.current
                                     ParseScreen(controller, readClipboard = { clip.getText()?.text })
                                 }
-                                key == Tab.TASKS.name -> TasksScreen(controller)
                                 key == Tab.GALLERY.name -> GalleryScreen(
                                     ctx = ctx,
                                     config = config,
@@ -308,16 +343,32 @@ fun App(sharedText: MutableState<String>) {
                                     onMessage = { toast = it },
                                     onImmersive = { immersive = it },
                                 )
-                                key == Tab.HISTORY.name -> HistoryScreen(controller) { csv ->
-                                    scope.launch {
-                                        val name = exportCsv(ctx, csv)
-                                        toast = if (name == null) "导出失败" else "已导出到 Download/ParseHub/$name"
-                                    }
-                                }
+                                key == Tab.HISTORY.name -> HistoryScreen(
+                                    c = controller,
+                                    onExportCsv = { csv ->
+                                        scope.launch {
+                                            val name = exportCsv(ctx, csv)
+                                            toast = if (name == null) "导出失败" else "已导出到 Download/ParseHub/$name"
+                                        }
+                                    },
+                                    onOpenFiles = { dir, fileNames ->
+                                        scope.launch {
+                                            val items = withContext(Dispatchers.IO) {
+                                                resolveDownloadedMedia(ctx, dir, fileNames)
+                                            }
+                                            if (items.isEmpty()) {
+                                                toast = "没找到已保存的媒体，确认已授权「所有文件访问」"
+                                            } else {
+                                                historyViewer = 0 to items
+                                            }
+                                        }
+                                    },
+                                )
                                 else -> SettingsHome(config) { page = it }
                             }
                         }
                     }
+                    }   // Row (大屏侧栏 + 内容)
                 },
             )
 
@@ -327,6 +378,26 @@ fun App(sharedText: MutableState<String>) {
                         Text(toast, style = MiuixTheme.textStyles.body2)
                     }
                 }
+            }
+        }
+
+        // 记录页「打开」→ 与图库一致的看图/播放覆盖层（盖在系统栏之上）
+        androidx.compose.animation.AnimatedVisibility(
+            visible = historyViewer != null,
+            modifier = Modifier.fillMaxSize(),
+            enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
+            exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(180)),
+        ) {
+            val pair = historyViewer
+            if (pair != null) {
+                MediaViewer(
+                    ctx = ctx,
+                    items = pair.second,
+                    startIndex = pair.first,
+                    onClose = { historyViewer = null },
+                    onMessage = { toast = it },
+                    onImmersive = { immersive = it },
+                )
             }
         }
     }

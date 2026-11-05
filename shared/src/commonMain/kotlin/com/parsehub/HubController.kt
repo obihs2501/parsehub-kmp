@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import com.parsehub.core.AppConfig
 import com.parsehub.core.HistoryEntry
 import com.parsehub.core.HistoryStore
+import com.parsehub.core.encodeFileNames
 import com.parsehub.core.Naming
 import com.parsehub.core.ParseResult
 import com.parsehub.core.Platform
@@ -291,6 +292,7 @@ class HubController(
         scope.launch {
             var ok = 0
             var files = 0
+            val savedNames = mutableListOf<String>()
             try {
                 for ((i, j) in jobs.withIndex()) {
                     if (cancelRequested) throw CancelledException()
@@ -321,6 +323,7 @@ class HubController(
                         }
                         ok++
                         files++
+                        savedNames += finalName
                         doneJobs = i + 1
                         note = "已保存 $files 项 · $finalName"
                         tasks = tasks.toMutableList().also { list ->
@@ -346,6 +349,7 @@ class HubController(
                         ts = nowMillis(), platform = r.platform.key, id = r.id, title = r.title,
                         author = r.author, creator = creator, url = urlText, kind = "download",
                         status = "ok", files = files, dir = dir,
+                        fileNames = encodeFileNames(savedNames),
                     ),
                 )
             } catch (e: CancelledException) {
@@ -355,6 +359,7 @@ class HubController(
                         ts = nowMillis(), platform = r.platform.key, id = r.id, title = r.title,
                         author = r.author, creator = creator, url = urlText, kind = "download",
                         status = "fail", files = files, dir = dir, error = "已取消",
+                        fileNames = encodeFileNames(savedNames),
                     ),
                 )
             } catch (e: Exception) {
@@ -366,6 +371,7 @@ class HubController(
                         ts = nowMillis(), platform = r.platform.key, id = r.id, title = r.title,
                         author = r.author, creator = creator, url = urlText, kind = "download",
                         status = "fail", files = files, dir = dir, error = msg,
+                        fileNames = encodeFileNames(savedNames),
                     ),
                 )
             } finally {

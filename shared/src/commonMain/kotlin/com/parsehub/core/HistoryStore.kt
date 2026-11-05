@@ -5,6 +5,12 @@ import kotlinx.serialization.json.Json
 import okio.FileSystem
 import okio.Path
 
+/** 记录里保存的文件名用换行拼接；文件名已由 Naming.safeName 去掉换行/控制字符 */
+fun encodeFileNames(names: List<String>): String = names.joinToString("\n") { it.replace("\n", " ") }
+
+fun decodeFileNames(raw: String): List<String> = if (raw.isBlank()) emptyList()
+else raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+
 /** 解析 / 下载记录条目 */
 @Serializable
 data class HistoryEntry(
@@ -20,6 +26,8 @@ data class HistoryEntry(
     val files: Int = 0,
     val dir: String = "",
     val error: String = "",
+    /** 成功落盘的文件名（JSON 数组字符串），供记录页直接定位并打开媒体 */
+    val fileNames: String = "",
 )
 
 private val STORE_JSON = Json {

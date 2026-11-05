@@ -5,16 +5,16 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
-import android.widget.MediaController
 import android.widget.VideoView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -48,9 +48,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,7 +63,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -161,7 +162,8 @@ internal fun GalleryScreen(
 ) {
     var all by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var denied by remember { mutableStateOf(false) }
+    var denied by remember { mutableStateOf(!hasMediaReadPermission(ctx)) }
+    var needAllFiles by remember { mutableStateOf(!hasAllFilesAccess()) }
     var reload by remember { mutableStateOf(0) }
 
     var stack by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -187,11 +189,28 @@ internal fun GalleryScreen(
         }
     }
 
-    LaunchedEffect(reload) {
+    // 从「所有文件访问权限」设置页返回时（onResume）自动重扫
+    var resumeTick by remember { mutableIntStateOf(0) }
+    val activity = remember(ctx) { ctx.findActivity() }
+    DisposableEffect(activity) {
+        val owner = activity as? androidx.lifecycle.LifecycleOwner ?: return@DisposableEffect onDispose {}
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) resumeTick++
+        }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+    LaunchedEffect(reload, resumeTick) {
         loading = true
-        val res = withContext(Dispatchers.IO) { runCatching { queryMedia(ctx) } }
-        all = res.getOrDefault(emptyList())
-        denied = res.isFailure
+        val granted = hasMediaReadPermission(ctx)
+        denied = !granted
+        needAllFiles = !hasAllFilesAccess()
+        if (granted) {
+            val res = withContext(Dispatchers.IO) { runCatching { queryMedia(ctx) } }
+            all = res.getOrDefault(emptyList())
+        } else {
+            all = emptyList()
+        }
         loading = false
     }
 
@@ -274,25 +293,23 @@ internal fun GalleryScreen(
     // 换目录 / 改搜索 / 换排序时回到第一批
     LaunchedEffect(prefix, query, sort, filter) { visibleCount = 90 }
 
-    // 滚动时标题区随内容向上收起：只保留一行小标题，不再固定占半屏
+    // 向下滚动时整个头部（标题 / 面包屑 / 搜索筛选 / 多选条）一起隐藏，
+    // 回到顶部再出现。头部不再固定占近半屏，滚起来网格占满全屏。
     var scrollY by remember { mutableFloatStateOf(0f) }
-    val heroCollapse by animateFloatAsState(
-        targetValue = if (scrollY > 24f) 1f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "heroCollapse",
-    )
+    val headerHidden by remember { derivedStateOf { scrollY > 24f } }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        // 整个头部随滚动收起/展开（淡出 + 高度收拢），不再固定占近半屏
+        AnimatedVisibility(
+            visible = !headerHidden,
+            enter = fadeIn(animationSpec = tween(180)) +
+                expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+            exit = fadeOut(animationSpec = tween(140)) +
+                shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+        ) {
+            Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .weight(1f)
-                    .graphicsLayer {
-                        alpha = 1f - heroCollapse * 0.85f
-                        translationY = -heroCollapse * 28f
-                    }
-                    .height((76 * (1f - heroCollapse * 0.82f)).dp.coerceAtLeast(0.dp)),
-            ) {
+            Box(Modifier.weight(1f)) {
                 PageHero(
                     "本地图库",
                     if (searching) {
@@ -413,6 +430,30 @@ internal fun GalleryScreen(
                 })
             }
         }
+            }   // Column (header content)
+        }       // AnimatedVisibility (整个头部随滚动隐藏)
+
+        // 权限分两级：媒体读取权限 → 读媒体库；所有文件访问 → 读其它应用写入的文件。
+        // 缺「所有文件访问」时仍照常显示已能读到的文件，只是给一条可点的提示条。
+        if (needAllFiles && !denied) {
+            Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "开启「所有文件访问权限」可浏览全部文件夹里的媒体",
+                            style = MiuixTheme.textStyles.body2,
+                            color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                        )
+                        Text(
+                            "不开启也能看本应用自己保存的文件，返回会自动刷新",
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                    TextButton(text = "去开启", onClick = { requestAllFilesAccess(ctx) })
+                }
+            }
+        }
 
         if (denied) {
             Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
@@ -422,15 +463,9 @@ internal fun GalleryScreen(
                         style = MiuixTheme.textStyles.body2,
                         color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                     )
-                    Button(onClick = {
-                        launcher.launch(
-                            arrayOf(
-                                "android.permission.READ_MEDIA_IMAGES",
-                                "android.permission.READ_MEDIA_VIDEO",
-                                "android.permission.READ_EXTERNAL_STORAGE",
-                            ),
-                        )
-                    }) { Text("授权", style = MiuixTheme.textStyles.button) }
+                    Button(onClick = { launcher.launch(mediaPermissions()) }) {
+                        Text("授权", style = MiuixTheme.textStyles.button)
+                    }
                 }
             }
         } else if (loading) {
@@ -443,9 +478,6 @@ internal fun GalleryScreen(
             EmptyHint(if (searching) "没有匹配的文件" else "这个文件夹是空的")
         } else {
             val gridState = rememberLazyGridState()
-            LaunchedEffect(gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset) {
-                scrollY = gridState.firstVisibleItemIndex * 1000f + gridState.firstVisibleItemScrollOffset.toFloat()
-            }
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Fixed(columns),
@@ -660,6 +692,28 @@ private fun FolderCard(name: String, count: Int, onOpen: () -> Unit) {
     }
 }
 
+/** 记录页等外部页面复用同一个看图覆盖层 */
+@Composable
+internal fun MediaViewer(
+    ctx: Context,
+    items: List<MediaItem>,
+    startIndex: Int = 0,
+    onClose: () -> Unit,
+    onMessage: (String) -> Unit,
+    onImmersive: (Boolean) -> Unit,
+) {
+    if (items.isEmpty()) return
+    ViewerOverlay(
+        ctx = ctx,
+        items = items,
+        startIndex = startIndex.coerceIn(0, items.size - 1),
+        onClose = onClose,
+        onMessage = onMessage,
+        onDeleted = {},
+        onImmersive = onImmersive,
+    )
+}
+
 @Composable
 private fun ViewerOverlay(
     ctx: Context,
@@ -676,6 +730,9 @@ private fun ViewerOverlay(
     var current by remember { mutableStateOf(items.getOrNull(startIndex) ?: items.first()) }
     var chrome by remember { mutableStateOf(true) }
     var zoomed by remember { mutableStateOf(false) }
+
+    // 返回键 / 手势返回先关闭看图（视频不再吞事件，这里兜底保证一定能退）
+    BackHandler(enabled = true) { onClose() }
 
     DisposableEffect(Unit) {
         onImmersive(true)
@@ -836,7 +893,8 @@ private fun VideoBody(item: MediaItem, onTap: () -> Unit) {
             factory = { c ->
                 VideoView(c).apply {
                     setVideoURI(item.uri)
-                    setMediaController(MediaController(c).also { it.setAnchorView(this) })
+                    // 不挂 MediaController：它会先吞掉返回键用来隐藏原生控制条，
+                    // 导致 Compose 的 BackHandler 收不到返回事件、看图界面退不出去
                     setOnPreparedListener { mp ->
                         mp.isLooping = true
                         start()
