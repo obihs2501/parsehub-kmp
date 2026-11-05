@@ -87,6 +87,10 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import android.os.Build
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.DisposableEffect
 
 private enum class Tab(val title: String, val icon: ImageVector) {
     PARSE("解析", MiuixIcons.Regular.Link),
@@ -125,7 +129,24 @@ fun App(sharedText: MutableState<String>) {
         "dark" -> true
         else -> sysDark
     }
-    SideEffect { setSystemBarsDarkIcons(window, !(darkUi || immersive)) }
+    val lightIcons = !(darkUi || immersive)
+    DisposableEffect(darkUi, immersive) {
+        ctx.findActivity()?.enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ) { !lightIcons },
+            navigationBarStyle = SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ) { !lightIcons },
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window?.isNavigationBarContrastEnforced = false
+        }
+        onDispose {}
+    }
+    SideEffect { setSystemBarsDarkIcons(window, lightIcons) }
 
     fun applyConfig(next: AppConfig) {
         config = next
