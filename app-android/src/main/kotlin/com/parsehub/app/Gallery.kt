@@ -572,12 +572,10 @@ private fun ViewerOverlay(
     LaunchedEffect(pagerState.currentPage) {
         items.getOrNull(pagerState.currentPage)?.let { current = it }
     }
-    // 看图时功能框 3 秒后自动隐藏，单击画面再唤出
-    LaunchedEffect(pagerState.currentPage, chrome) {
-        if (chrome) {
-            delay(3000)
-            chrome = false
-        }
+    // 进入看图时先显示，3 秒后自动隐藏；之后由单击画面决定显示/隐藏
+    LaunchedEffect(Unit) {
+        delay(3000)
+        chrome = false
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
