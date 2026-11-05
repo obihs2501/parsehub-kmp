@@ -63,7 +63,7 @@ fun themeLabel(theme: String): String = when (theme) {
 @Composable
 fun SettingsHome(config: AppConfig, onOpen: (SettingsPage) -> Unit) {
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = LocalPageBottomPadding.current).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         PageHero("设置", "偏好与本地环境")
@@ -132,7 +132,7 @@ fun NamingSettings(config: AppConfig, onConfig: (AppConfig) -> Unit) {
     )
 
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = LocalPageBottomPadding.current).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         PageHero("命名与归档", "模板支持 {platform} {author} {creator} {title} {id} {publish_date} {date} {time} {index:03d} {type}")
@@ -205,7 +205,7 @@ fun AliasSettings(config: AppConfig, onConfig: (AppConfig) -> Unit) {
     var creator by remember { mutableStateOf("") }
 
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = LocalPageBottomPadding.current).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         PageHero("作者映射", "把同一创作者在不同平台或不同账号的 ID / 昵称映射到同一个归档作者，配合文件夹模板里的 {creator} 合并归档")
@@ -290,7 +290,7 @@ fun CookieSettings(config: AppConfig, onConfig: (AppConfig) -> Unit) {
     var cookie by remember { mutableStateOf("") }
 
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = LocalPageBottomPadding.current).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         PageHero("Cookie 池", "按平台配置多个账号，每次解析轮换一条；显式填写的那条优先")
@@ -370,7 +370,7 @@ fun CookieSettings(config: AppConfig, onConfig: (AppConfig) -> Unit) {
 @Composable
 fun AppearanceSettings(config: AppConfig, onConfig: (AppConfig) -> Unit) {
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = LocalPageBottomPadding.current).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         PageHero("外观", "主题与解析默认选中")
@@ -413,7 +413,7 @@ fun DownloadSettings(
     onPickFolder: (() -> Unit)? = null,
 ) {
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = LocalPageBottomPadding.current).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         PageHero("下载", "保存位置、分片连接数与超时")
@@ -488,7 +488,7 @@ fun DownloadSettings(
 @Composable
 fun AboutSettings(onOpenUrl: (String) -> Unit) {
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = LocalPageBottomPadding.current).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         PageHero("关于", "ParseHub · Kotlin Multiplatform")

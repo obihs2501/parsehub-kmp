@@ -15,6 +15,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            api(project(":kernel"))
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.ktor.client.core)
@@ -27,6 +28,7 @@ kotlin {
             implementation(libs.miuix.preference)
             implementation(libs.miuix.icons)
             implementation(libs.coil.compose)
+            implementation(libs.coil.network.core)
         }
         androidMain.dependencies {
             implementation(libs.coil.network.okhttp)

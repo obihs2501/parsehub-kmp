@@ -3,10 +3,10 @@ package com.parsehub.ui
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -51,11 +51,14 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun ParseScreen(
     c: HubController,
     readClipboard: () -> String?,
+    onPreviewImages: ((urls: List<String>, startIndex: Int, referer: String) -> Unit)? = null,
+    enableImageSelection: Boolean = false,
 ) {
     Column(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(bottom = LocalPageBottomPadding.current)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -125,8 +128,17 @@ fun ParseScreen(
         if (r != null) {
             Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (!r.cover.isNullOrEmpty()) {
-                        Thumb(r.cover, Modifier.fillMaxWidth().heightIn(max = 220.dp))
+                    val cover = r.cover
+                    if (!cover.isNullOrEmpty()) {
+                        Thumb(
+                            cover,
+                            Modifier.fillMaxWidth().heightIn(max = 300.dp).then(
+                                if (onPreviewImages != null) Modifier.clickable {
+                                    onPreviewImages(listOf(cover), 0, r.referer)
+                                } else Modifier,
+                            ),
+                            referer = r.referer,
+                        )
                     }
                     Text(r.title, style = MiuixTheme.textStyles.headline1)
                     InfoRow("平台", "${r.platform.label} · @${r.author}")
@@ -142,25 +154,29 @@ fun ParseScreen(
                             style = MiuixTheme.textStyles.footnote2,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            r.images.take(12).forEach { im ->
-                                AsyncImage(
-                                    model = im.url,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.size(76.dp).clip(RoundedCornerShape(10.dp)),
-                                )
-                            }
-                            if (r.images.size > 12) {
-                                Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        "+${r.images.size - 12}",
-                                        style = MiuixTheme.textStyles.footnote2,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            itemsIndexed(r.images) { position, im ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    AsyncImage(
+                                        model = parsedImageRequest(im.url, r.referer),
+                                        contentDescription = "第 ${im.index + 1} 张，点击查看大图",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(88.dp).clip(RoundedCornerShape(10.dp)).then(
+                                            if (onPreviewImages != null) Modifier.clickable {
+                                                onPreviewImages(r.images.map { it.url }, position, r.referer)
+                                            } else Modifier,
+                                        ),
                                     )
+                                    if (enableImageSelection) Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            state = if (c.imagesOn && c.isImageSelected(im.index)) ToggleableState.On else ToggleableState.Off,
+                                            onClick = { c.toggleImage(im.index) },
+                                        )
+                                        Text("${im.index + 1}", style = MiuixTheme.textStyles.footnote2)
+                                    }
                                 }
                             }
                         }
@@ -176,14 +192,27 @@ fun ParseScreen(
             }
 
             if (r.images.isNotEmpty()) {
-                SectionLabel("图集 · ${r.images.size} 张")
-                Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(horizontal = 16.dp)) {
-                    SwitchPreference(
-                        title = "下载全部图片",
-                        summary = "实况照片会同时下载动态视频",
-                        checked = c.imagesOn,
-                        onCheckedChange = { c.imagesOn = it },
-                    )
+                val selectedImages = r.images.count { c.imagesOn && c.isImageSelected(it.index) }
+                SectionLabel(if (enableImageSelection) "图集 · 已选 $selectedImages/${r.images.size} 张" else "图集 · ${r.images.size} 张")
+                Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+                    if (!enableImageSelection) {
+                        SwitchPreference(
+                            title = "下载全部图片",
+                            summary = "实况照片会同时下载动态视频",
+                            checked = c.imagesOn,
+                            onCheckedChange = { c.imagesOn = it },
+                        )
+                    } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            TextButton(text = "全选", onClick = { c.selectAllImages(true) })
+                            TextButton(text = "清空", onClick = { c.selectAllImages(false) })
+                        }
+                        Text(
+                            "点击图片查看大图，下方勾选下载；实况照片同时下载动态视频",
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
                 }
             }
 
@@ -304,6 +333,7 @@ fun TasksScreen(c: HubController) {
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(bottom = LocalPageBottomPadding.current)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -379,6 +409,7 @@ fun HistoryScreen(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(bottom = LocalPageBottomPadding.current)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

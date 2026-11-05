@@ -1,0 +1,14 @@
+ParseHub Studio frontend reference attribution
+
+The warm paper / terracotta visual language, local media gallery, MediaTile,
+MediaLightbox, gallery-media utilities and video thumbnail queue are adapted
+from the user-provided X-Spider reference source:
+https://github.com/obihs2501/x-spider-mod-2026
+Original X-Spider project credited in that reference: MiningCattiva.
+
+Reference-derived frontend code is distributed under GPL-3.0-only.
+License text: https://www.gnu.org/licenses/gpl-3.0.txt
+
+ParseHub integration replaces the reference's Twitter/account, aria2, updater,
+blogger-management and download-management integrations with the ParseHub
+Kotlin sidecar API. No reference account credentials or bearer token remain.
