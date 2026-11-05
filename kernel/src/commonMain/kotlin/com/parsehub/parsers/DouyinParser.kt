@@ -6,7 +6,9 @@ import io.ktor.http.URLBuilder
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 
 /**
@@ -147,21 +149,26 @@ object DouyinParser {
             val res = (parseJson(json) as? JsonObject)
                 ?.obj("data")?.obj("storeState")?.obj("detail")?.obj("videoData")?.obj("result")
             if (res == null) JxInfo() else {
-                var fb: String? = null
-                val vmRaw = res.str("video_model")
-                if (vmRaw.isNotEmpty()) {
-                    val vm = parseJson(vmRaw) as? JsonObject
-                    fb = when (val f = vm?.any("fallback_api")) {
-                        is JsonObject -> f.str("fallback_api").ifEmpty { null }
-                        is JsonElement -> f.toString().trim('"').ifEmpty { null }
-                        else -> null
-                    }
-                }
-                JxInfo(res.lng("play_count"), fb)
+                jingxuanInfo(res)
             }
         }
     } catch (_: Exception) {
         JxInfo()
+    }
+
+    // content preserves decoded JSON strings, including escaped slashes and quotes.
+    private fun normalizedJson(value: JsonElement?): JsonElement? = when (value) {
+        is JsonPrimitive -> value.contentOrNull?.let { text ->
+            try { parseJson(text) } catch (_: Exception) { null }
+        }
+        else -> value
+    }
+
+    internal fun jingxuanInfo(result: JsonObject): JxInfo {
+        val model = normalizedJson(result.any("video_model")) as? JsonObject
+        val fallback = model?.any("fallback_api")
+        val value = if (fallback is JsonObject) fallback.any("fallback_api") else fallback
+        return JxInfo(result.lng("play_count"), (value as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() })
     }
 
     // ------------------------------------------------------------------ fplay（原画真值 + 解密直链）
@@ -238,26 +245,18 @@ object DouyinParser {
         return ""
     }
 
-    private fun normVideoList(v: JsonElement?): List<JsonObject> {
+    internal fun normVideoList(v: JsonElement?): List<JsonObject> {
         val out = mutableListOf<JsonObject>()
-        when (v) {
-            is JsonArray -> v.forEach { (it as? JsonObject)?.let { o -> out += unwrapMeta(o) } }
-            is JsonObject -> v.values.forEach { (it as? JsonObject)?.let { o -> out += unwrapMeta(o) } }
+        when (val list = normalizedJson(v)) {
+            is JsonArray -> list.forEach { (it as? JsonObject)?.let { o -> out += unwrapMeta(o) } }
+            is JsonObject -> list.values.forEach { (it as? JsonObject)?.let { o -> out += unwrapMeta(o) } }
             else -> {}
         }
         return out
     }
 
     private fun unwrapMeta(x: JsonObject): JsonObject {
-        val mo = when (val m = x.any("video_meta")) {
-            is JsonObject -> m
-            is JsonElement -> try {
-                parseJson(m.toString().trim('"')) as? JsonObject
-            } catch (_: Exception) {
-                null
-            }
-            else -> null
-        } ?: return x
+        val mo = normalizedJson(x.any("video_meta")) as? JsonObject ?: return x
         return buildJsonObject {
             for ((k, v) in x) if (k != "video_meta") put(k, v)
             for ((k, v) in mo) put(k, v)
@@ -274,7 +273,11 @@ object DouyinParser {
         var url = Regex("codec_type=\\d+").replace(fallbackApi, "codec_type=8")
         if (!url.contains("codec_type=")) url += "&codec_type=8"
         val body = Http.getText(url, mapOf("User-Agent" to UA_MOBILE))
-        val d = (parseJson(body) as? JsonObject)?.obj("video_info")?.obj("data") ?: return null
+        return fplayInfo(parseJson(body) as? JsonObject ?: return null)
+    }
+
+    internal fun fplayInfo(response: JsonObject): OriginInfo? {
+        val d = response.obj("video_info")?.obj("data") ?: return null
         val g = normVideoList(d.any("video_list"))
             .firstOrNull { it.str("quality").lowercase() == "original" } ?: return null
         val seed = d.str("key_seed")
@@ -336,11 +339,8 @@ object DouyinParser {
     }
 
     suspend fun resolveOrigin(uri: String): Pair<List<String>, Long> {
-        if (!Regex("^[A-Za-z0-9_\\-]{10,64}$").matches(uri)) return emptyList<String>() to 0L
-        val params = mapOf(
-            "video_id" to uri, "ratio" to "default", "watermark" to "0",
-            "is_play_url" to "1", "source" to "PackSourceEnum_PUBLISH",
-        )
+        if (!isUsableOriginUri(uri)) return emptyList<String>() to 0L
+        val params = originParams(uri)
         for (line in listOf(0, 2, 5, 3, 1, 4)) {
             val p = params + ("line" to line.toString())
             for (api in listOf(PLAY_API, PLAY_API_ALT)) {
@@ -365,7 +365,22 @@ object DouyinParser {
         return if (head.isEmpty() || head.size == urls.size) urls else head + urls.filter { it !in head }
     }
 
-    suspend fun buildTiers(detail: JsonObject, jx: JxInfo, wantOrigin: Boolean): List<Tier> {
+    internal fun originParams(uri: String): Map<String, String> = mapOf(
+        "video_id" to uri, "ratio" to "default", "watermark" to "0",
+        "is_play_url" to "1", "source" to "PackSourceEnum_PUBLISH",
+    )
+
+    internal fun isUsableOriginUri(uri: String): Boolean =
+        Regex("^[A-Za-z0-9_-]{10,64}$").matches(uri)
+
+    internal fun originUri(detail: JsonObject, tiers: List<Tier>): String =
+        (listOf(detail.obj("video")?.obj("play_addr")?.str("uri").orEmpty()) +
+            tiers.mapNotNull { it.uri } +
+            detail.obj("video")?.arr("bit_rate")?.objs().orEmpty()
+                .map { it.obj("play_addr")?.str("uri").orEmpty() })
+            .firstOrNull { isUsableOriginUri(it) }.orEmpty()
+
+    internal fun detailTiers(detail: JsonObject): List<Tier> {
         val v = detail.obj("video") ?: JsonObject(emptyMap())
         val raw = mutableListOf<Tier>()
         // 顶层 play_addr 也收进候选（对齐原版 _stream_candidates）：它有时只是低清自适应预览，
@@ -413,49 +428,55 @@ object DouyinParser {
         val uniq = raw.distinctBy { it.urls.firstOrNull() ?: "${it.gear}/${it.w}/${it.h}/${it.bps}" }
             .toMutableList()
 
-        if (wantOrigin && uniq.isNotEmpty()) {
-            val top = uniq.first()
-            val uri = v.obj("play_addr")?.str("uri").orEmpty().ifEmpty { top.uri ?: "" }
-            val real = try {
-                fplayOriginal(jx.fallbackApi)
-            } catch (_: Exception) {
-                null
-            }
-            val ourls: List<String>
-            val osize: Long
-            if (real != null && real.urls.isNotEmpty()) {
-                ourls = real.urls
-                osize = real.size
-            } else {
-                val p = resolveOrigin(uri)
-                ourls = p.first
-                osize = p.second
-            }
-            if (ourls.isNotEmpty()) {
-                val dur = v.lng("duration")
-                var w = v.int("width", top.w)
-                var h = v.int("height", top.h)
-                val size = if (osize > 0) osize else top.size
-                var bps = if (size > 0 && dur > 0) size * 8 * 1000 / dur else top.bps
-                var fps = top.fps
-                var fpsEst = true
-                var codec: String? = null
-                if (real != null) {
-                    if (real.w > 0) w = real.w
-                    if (real.h > 0) h = real.h
-                    if (real.bps > 0) bps = real.bps
-                    if (real.fps > 0) {
-                        fps = real.fps
-                        fpsEst = false
-                    }
-                    codec = real.codec.ifEmpty { null }
+        return uniq
+    }
+
+    suspend fun buildTiers(detail: JsonObject, jx: JxInfo, wantOrigin: Boolean): List<Tier> {
+        val tiers = detailTiers(detail)
+        if (!wantOrigin) return assembleTiers(detail, tiers, null, emptyList<String>() to 0L)
+        val real = try { fplayOriginal(jx.fallbackApi) } catch (_: Exception) { null }
+        // Prefer fplay direct URLs; a usable URI is only required for the 302 fallback.
+        val resolved = if (real != null && real.urls.isNotEmpty()) real.urls to real.size
+            else resolveOrigin(originUri(detail, tiers))
+        return assembleTiers(detail, tiers, real, resolved)
+    }
+
+    internal fun assembleTiers(
+        detail: JsonObject,
+        tiers: List<Tier>,
+        real: OriginInfo?,
+        resolved: Pair<List<String>, Long>,
+    ): List<Tier> {
+        val v = detail.obj("video") ?: JsonObject(emptyMap())
+        val uniq = tiers.toMutableList()
+        val top = tiers.maxWithOrNull(compareBy<Tier> { it.w.toLong() * it.h }.thenBy { it.size }.thenBy { it.bps })
+        val uri = originUri(detail, tiers)
+        val (ourls, osize) = if (real != null && real.urls.isNotEmpty()) real.urls to real.size else resolved
+        if (ourls.isNotEmpty()) {
+            val dur = v.lng("duration")
+            var w = v.int("width").takeIf { it > 0 } ?: (top?.w ?: 0)
+            var h = v.int("height").takeIf { it > 0 } ?: (top?.h ?: 0)
+            // Preview bytes and bitrate belong to a different file; unknown origin values stay zero.
+            val size = real?.size?.takeIf { it > 0 } ?: osize.takeIf { it > 0 } ?: 0L
+            var bps = if (size > 0 && dur > 0) size * 8 * 1000 / dur else 0L
+            var fps = top?.fps ?: 0.0
+            var fpsEst = true
+            var codec: String? = null
+            if (real != null) {
+                if (real.w > 0) w = real.w
+                if (real.h > 0) h = real.h
+                if (real.bps > 0) bps = real.bps
+                if (real.fps > 0) {
+                    fps = real.fps
+                    fpsEst = false
                 }
-                val h265 = if (codec != null) codec == "hevc" else (v.bool("is_h265") || top.h265)
-                uniq += Tier(
-                    -1, "原画", w, h, bps, size, h265, fps, fpsEst,
-                    true, ourls.map { ensureMime(toHttps(it)) }, uri.ifEmpty { null },
-                )
+                codec = real.codec.ifEmpty { null }
             }
+            val h265 = if (codec != null) codec == "hevc" else (v.bool("is_h265") || (top?.h265 ?: false))
+            uniq += Tier(
+                -1, "原画", w, h, bps, size, h265, fps, fpsEst,
+                true, ourls.map { ensureMime(toHttps(it)) }, uri.ifEmpty { null },
+            )
         }
         // 排序：原画永远第一（分辨率未知也不该被挤下去），其余按 分辨率面积 → 体积 → 码率 从高到低
         return uniq
@@ -584,8 +605,8 @@ object DouyinParser {
         val aid = resolveAwemeId(text)
         val detail = fetchDetail(aid)
         val jx = fetchJingxuan(aid)
-        val wantOrigin = opts.defaultTier != "none"
-        val tiers = buildTiers(detail, jx, wantOrigin)
+        // defaultTier controls selection in the caller, never quality discovery.
+        val tiers = buildTiers(detail, jx, wantOrigin = true)
         val images = extractImages(detail)
         val aux = collectAux(detail)
 

@@ -10,6 +10,9 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
+import io.ktor.http.URLBuilder
+import io.ktor.http.takeFrom
+import io.ktor.http.encodedPath
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
@@ -26,6 +29,17 @@ object Http {
 
     val client: HttpClient by lazy { newHttpClient(true) }
     val noRedirect: HttpClient by lazy { newHttpClient(false) }
+
+    data class Page(val status: Int, val url: String, val body: String)
+
+    suspend fun getPage(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+        cli: HttpClient = client,
+    ): Page {
+        val resp = cli.get(url) { applyHeaders(headers) }
+        return Page(resp.status.value, resp.call.request.url.toString(), resp.bodyAsText())
+    }
 
     suspend fun getText(
         url: String,
@@ -65,7 +79,9 @@ object Http {
         cli: HttpClient = noRedirect,
     ): String? {
         val resp = cli.get(url) { applyHeaders(headers) }
-        return resp.headers[HttpHeaders.Location]
+        return if (resp.status.value in setOf(301, 302, 303, 307, 308)) {
+            resp.headers[HttpHeaders.Location]?.takeIf { it.isNotBlank() }
+        } else null
     }
 
     suspend fun getHeaders(
@@ -93,15 +109,30 @@ object Http {
     }
 
     fun resolveUrl(base: String, location: String): String {
-        if (location.startsWith("http://") || location.startsWith("https://")) return location
-        val se = base.indexOf("://")
-        if (se <= 0) return location
-        val hs = base.indexOf('/', se + 3)
-        val origin = if (hs > 0) base.substring(0, hs) else base
-        if (location.startsWith("//")) return base.substring(0, se + 1) + location
-        if (location.startsWith("/")) return origin + location
-        val dirEnd = if (hs > 0) base.lastIndexOf('/') else -1
-        return if (dirEnd > hs) base.substring(0, dirEnd + 1) + location else origin + "/" + location
+        if (location.isEmpty()) return base.substringBefore('#')
+        val builder = URLBuilder(base)
+        val oldPath = builder.encodedPath
+        // Ktor's takeFrom appends queries and drops the final path segment even for ?query.
+        // Clear inherited components, then restore the path for query/fragment-only references.
+        if (!location.startsWith("#")) {
+            builder.encodedParameters.clear()
+            builder.trailingQuery = false
+        }
+        builder.encodedFragment = ""
+        builder.takeFrom(location)
+        if (location.startsWith("?") || location.startsWith("#")) builder.encodedPath = oldPath
+        val segments = mutableListOf<String>()
+        val path = builder.encodedPath
+        for (segment in path.split('/')) {
+            when (segment) {
+                "." -> Unit
+                ".." -> if (segments.isNotEmpty() && segments.last().isNotEmpty()) segments.removeAt(segments.lastIndex)
+                else -> segments += segment
+            }
+        }
+        if (path.endsWith("/.") || path.endsWith("/..")) segments += ""
+        builder.encodedPath = segments.joinToString("/").ifEmpty { "/" }
+        return builder.buildString()
     }
 
     private fun HttpRequestBuilder.applyHeaders(h: Map<String, String>) {

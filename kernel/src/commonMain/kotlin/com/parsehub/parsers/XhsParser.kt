@@ -2,28 +2,39 @@ package com.parsehub.parsers
 
 import com.parsehub.core.*
 import com.parsehub.net.Http
+import io.ktor.http.Url
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 
 /**
- * 小红书解析（移植自 short_videos XiaohongshuParser.php，尽力而为版）：
- * 短链 -> 真实链接 -> 页面 window.__INITIAL_STATE__ -> noteDetailMap / noteData。
- * 无水印图走 xhscdn 的 imageView2 去水印路径；视频取 h265 优先、按码率排序。
- * 注意：部分笔记需要登录 Cookie（设置里可填），否则可能拿不到 INITIAL_STATE。
+ * 小红书页面解析，兼容桌面 noteDetailMap 和移动端 noteData。
+ * 分享签名参数原样保留；移动 Safari 请求失败后仅回退一次桌面请求。
+ * 无水印图片和原有视频选流策略保持不变，部分笔记仍需要登录 Cookie。
  */
 object XhsParser {
-    private val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0"
+    internal fun pageHeaders(mobile: Boolean, cookie: String = ""): Map<String, String> = buildMap {
+        put("User-Agent", if (mobile) MOBILE_UA else Http.UA)
+        put("Accept", if (mobile) MOBILE_ACCEPT else DESKTOP_ACCEPT)
+        if (cookie.isNotEmpty()) put("Cookie", cookie)
+    }
+
+    private const val MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) " +
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+    private const val MOBILE_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    private const val DESKTOP_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9," +
+        "image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+
+    // Do not use the shared extractUrl: it removes query parameters used in signed shares.
+    internal fun shareUrl(text: String): String =
+        Regex("https?://[^\\s\"'<>]+").find(text)?.value
+            ?.trimEnd('，', '。', '；', ',', '.', ';')
+            ?.replace(Regex("^(https?://)(www\\.)?xhs\\.com(?=[:/]|$)"), "$1$2xhslink.com")
+            ?: throw RuntimeException("找不到链接")
 
     private fun extractId(url: String): String? {
-        for (pat in listOf(
-            "/discovery/item/([a-zA-Z0-9]+)",
-            "/explore/([a-zA-Z0-9]+)",
-            "/item/([a-zA-Z0-9]+)",
-            "/note/([a-zA-Z0-9]+)",
-        )) {
-            Regex(pat).find(url)?.let { return it.groupValues[1] }
-        }
-        return null
+        val path = try { Url(url).encodedPath } catch (_: IllegalArgumentException) { return null }
+        return Regex("/(?:discovery/item|explore|item|note)/([a-zA-Z0-9]+)(?:/|$)")
+            .find(path)?.groupValues?.get(1)
     }
 
     private fun processImageUrl(url: String): String {
@@ -49,39 +60,183 @@ object XhsParser {
         return toHttps(url)
     }
 
-    suspend fun parse(text: String, opts: ParseOptions): ParseResult {
-        var url = extractUrl(text) ?: throw RuntimeException("找不到链接")
-        url = url.replace("xhs.com", "xhslink.com")
-        val id: String
-        if ("www.xiaohongshu.com" in url) {
-            id = extractId(url) ?: throw RuntimeException("链接格式错误，无法提取 ID")
-        } else {
-            val final = Http.followChain(url, mapOf("User-Agent" to UA))
-            id = extractId(final) ?: extractId(url)
-            ?: throw RuntimeException("链接格式错误，无法提取 ID")
-            url = final
+    suspend fun parse(text: String, opts: ParseOptions): ParseResult =
+        parseWithFetcher(text, opts) { url, headers -> Http.getPage(url, headers) }
+
+    // Retry the original signed URL, never a login/captcha redirect. At most two page requests.
+    internal suspend fun parseWithFetcher(
+        text: String,
+        opts: ParseOptions,
+        fetch: suspend (String, Map<String, String>) -> Http.Page,
+    ): ParseResult {
+        val url = shareUrl(text)
+        val requestedId = extractId(url)
+        var failure: PageFailure? = null
+        for (mobile in listOf(true, false)) {
+            try {
+                val page = fetch(url, pageHeaders(mobile, opts.cookieXhs))
+                return parsePage(page.status, page.url, page.body, requestedId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: PageFailure) {
+                if (failure == null || e.kind.priority > failure.kind.priority) failure = e
+            } catch (_: Exception) {
+                // Transport/parser errors may contain signed URLs or page content.
+                if (failure == null) failure = PageFailure(FailureKind.REQUEST)
+            }
         }
+        throw failure ?: PageFailure(FailureKind.DATA)
+    }
 
-        val headers = mutableMapOf(
-            "User-Agent" to UA,
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "zh-CN,zh;q=0.9,en;q=0.8",
-        )
-        if (opts.cookieXhs.isNotEmpty()) headers["Cookie"] = opts.cookieXhs
-        val page = Http.getText(url, headers)
+    internal enum class FailureKind(val messageText: String, val priority: Int) {
+        REQUEST("小红书页面请求失败", 0),
+        DATA("未找到可用笔记数据（可能需要登录 Cookie）", 1),
+        IDENTITY("笔记身份不匹配", 2),
+        LOGIN("该帖子需要登录后查看", 3),
+        NOT_FOUND("帖子不存在或已失效", 4),
+        RISK("被小红书风控拦截，请稍后重试", 5),
+    }
 
-        val m = Regex(
-            "<script>\\s*window\\.__INITIAL_STATE__\\s*=\\s*(\\{.*?\\})</script>",
-            RegexOption.DOT_MATCHES_ALL,
-        ).find(page) ?: throw RuntimeException("未找到笔记数据（可能需要登录 Cookie）或链接已失效")
-        val json = parseJson(m.groupValues[1].replace("undefined", "null")) as? JsonObject
-            ?: throw RuntimeException("笔记数据解析失败")
+    internal class PageFailure(val kind: FailureKind) : RuntimeException(kind.messageText)
 
-        val note = json.obj("note")?.obj("noteDetailMap")?.obj(id)?.obj("note")
-            ?: json.obj("noteData")?.obj("data")?.obj("noteData")
-            ?: throw RuntimeException("未找到笔记详情（可能需要登录 Cookie）")
+    internal fun pageFailure(status: Int, url: String): FailureKind? {
+        val path = try { Url(url).encodedPath.lowercase() } catch (_: IllegalArgumentException) { "" }
+        return when {
+            path.startsWith("/404/sec") || path.contains("/captcha") ||
+                path.contains("/verify") || status == 403 || status == 429 -> FailureKind.RISK
+            path == "/login" || path.startsWith("/login/") || status == 401 -> FailureKind.LOGIN
+            path == "/404" || path.startsWith("/404/") || status == 404 || status == 410 -> FailureKind.NOT_FOUND
+            status !in 200..299 -> FailureKind.REQUEST
+            else -> null
+        }
+    }
 
-        return formatNote(note, id)
+    internal fun parsePage(status: Int, url: String, html: String, requestedId: String? = null): ParseResult {
+        pageFailure(status, url)?.let { throw PageFailure(it) }
+        val finalId = extractId(url)
+        if (requestedId != null && finalId != null && requestedId != finalId) {
+            throw PageFailure(FailureKind.IDENTITY)
+        }
+        val id = requestedId ?: finalId ?: throw PageFailure(FailureKind.DATA)
+        return try {
+            formatNote(selectNote(initialState(html), id), id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: PageFailure) {
+            throw e
+        } catch (_: Exception) {
+            throw PageFailure(FailureKind.DATA)
+        }
+    }
+
+    internal fun selectNote(state: JsonObject, id: String): JsonObject {
+        val desktop = state.obj("note")
+        val details = desktop?.obj("noteDetailMap")
+        fun checked(note: JsonObject?, keyedId: String? = null): JsonObject? {
+            if (note == null || note.isEmpty()) return null
+            val identities = listOf(note.str("noteId"), note.str("id")).filter { it.isNotEmpty() }
+            if (identities.any { it != id } || (keyedId != null && keyedId != id)) return null
+            // Requested map keys supply identity; H5 must carry an explicit note ID.
+            if (keyedId == null && identities.isEmpty()) return null
+            return note
+        }
+        checked(details?.obj(id)?.obj("note"), id)?.let { return it }
+        val firstId = desktop?.str("firstNoteId").orEmpty()
+        if (firstId.isNotEmpty()) checked(details?.obj(firstId)?.obj("note"), firstId)?.let { return it }
+        checked(state.obj("noteData")?.obj("data")?.obj("noteData"))?.let { return it }
+        if (details != null || state.obj("noteData") != null) throw PageFailure(FailureKind.IDENTITY)
+        throw PageFailure(FailureKind.DATA)
+    }
+
+    internal fun initialState(html: String): JsonObject {
+        val scripts = Regex("<script\\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>(.*?)</script\\s*>",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        val assignment = Regex("(?:^|[;\\s])window\\.__INITIAL_STATE__\\s*=\\s*")
+        for (script in scripts.findAll(html)) {
+            val body = script.groupValues[1]
+            val match = assignment.find(body) ?: continue
+            try {
+                return parseJson(StateReader(body, match.range.last + 1).value()) as? JsonObject ?: continue
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // A later script can contain the usable state.
+            }
+        }
+        throw PageFailure(FailureKind.DATA)
+    }
+
+    /** Read JSON plus the two JS forms seen in state; never execute script. */
+    private class StateReader(private val text: String, private var pos: Int) {
+        private fun space() { while (pos < text.length && text[pos].isWhitespace()) pos++ }
+        private fun take(c: Char) { space(); require(pos < text.length && text[pos++] == c) }
+        private fun word(s: String): Boolean {
+            space()
+            if (!text.startsWith(s, pos)) return false
+            val end = pos + s.length
+            if (end < text.length && (text[end].isLetterOrDigit() || text[end] == '_' || text[end] == '$')) return false
+            pos = end
+            return true
+        }
+        fun value(depth: Int = 0): String {
+            require(depth < 128)
+            space()
+            require(pos < text.length)
+            if (word("undefined")) return "null"
+            if (word("new")) {
+                require(word("Set"))
+                take('(')
+                space()
+                val array = if (pos < text.length && text[pos] == ')') "[]" else {
+                    require(pos < text.length && text[pos] == '[')
+                    value(depth + 1)
+                }
+                take(')')
+                return array
+            }
+            val start = pos
+            return when (text[pos]) {
+                '"' -> {
+                    pos++
+                    var escaped = false
+                    while (pos < text.length) {
+                        val c = text[pos++]
+                        if (!escaped && c == '"') return text.substring(start, pos)
+                        escaped = !escaped && c == '\\'
+                    }
+                    error("Unterminated string")
+                }
+                '{', '[' -> {
+                    val objectValue = text[pos++] == '{'
+                    val close = if (objectValue) '}' else ']'
+                    val parts = mutableListOf<String>()
+                    space()
+                    while (pos < text.length && text[pos] != close) {
+                        val part = if (objectValue) {
+                            require(text[pos] == '"')
+                            val key = value(depth + 1)
+                            take(':')
+                            key + ":" + value(depth + 1)
+                        } else value(depth + 1)
+                        parts += part
+                        space()
+                        if (pos < text.length && text[pos] == close) break
+                        take(',')
+                        space()
+                    }
+                    take(close)
+                    (if (objectValue) "{" else "[") + parts.joinToString(",") + close
+                }
+                else -> {
+                    while (pos < text.length && !text[pos].isWhitespace() && text[pos] !in ",]}):;") pos++
+                    require(pos > start)
+                    val token = text.substring(start, pos)
+                    require(token in listOf("null", "true", "false") ||
+                        Regex("-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?").matches(token))
+                    token
+                }
+            }
+        }
     }
 
     private fun formatNote(note: JsonObject, id: String): ParseResult {
