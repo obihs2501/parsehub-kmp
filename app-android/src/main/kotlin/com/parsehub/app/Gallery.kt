@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.widget.MediaController
 import android.widget.VideoView
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -16,6 +17,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -46,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,6 +56,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -66,6 +71,7 @@ import com.parsehub.ui.InfoRow
 import com.parsehub.ui.PageHero
 import com.parsehub.ui.Reveal
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
@@ -146,6 +152,41 @@ internal fun GalleryScreen(
         all = res.getOrDefault(emptyList())
         denied = res.isFailure
         loading = false
+    }
+
+    // 视频首帧缩略图（MediaStore 提供），异步取，避免视频所在目录整片空白
+    val videoThumbs = remember { mutableStateMapOf<String, ImageBitmap>() }
+    LaunchedEffect(all) {
+        val missing = all.filter { it.isVideo && !videoThumbs.containsKey(it.uri.toString()) }.take(200)
+        if (missing.isEmpty()) return@LaunchedEffect
+        val decoded = withContext(Dispatchers.IO) {
+            buildMap {
+                missing.forEach { item ->
+                    runCatching {
+                        val bmp = MediaStore.Video.Thumbnails.getThumbnail(
+                            ctx.contentResolver,
+                            ContentUris.parseId(item.uri),
+                            MediaStore.Video.Thumbnails.MINI_KIND,
+                            null,
+                        )
+                        if (bmp != null) put(item.uri.toString(), bmp.asImageBitmap())
+                    }
+                }
+            }
+        }
+        videoThumbs.putAll(decoded)
+    }
+
+    // 系统返回键：先退出查看器，再退出多选，然后逐级回上级目录
+    BackHandler(enabled = viewerAt != null || selecting || stack.isNotEmpty()) {
+        when {
+            viewerAt != null -> viewerAt = null
+            selecting -> {
+                selecting = false
+                selected = emptySet()
+            }
+            else -> stack = stack.dropLast(1)
+        }
     }
 
     val prefix = if (stack.isEmpty()) "" else stack.joinToString("/") + "/"
@@ -375,12 +416,35 @@ internal fun GalleryScreen(
                                         },
                                     ),
                             ) {
-                                AsyncImage(
-                                    model = item.uri,
-                                    contentDescription = item.name,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
+                                if (item.isVideo) {
+                                    val bmp = videoThumbs[item.uri.toString()]
+                                    if (bmp != null) {
+                                        Image(
+                                            bitmap = bmp,
+                                            contentDescription = item.name,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    } else {
+                                        Box(
+                                            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text(
+                                                "视频",
+                                                style = MiuixTheme.textStyles.footnote2,
+                                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    AsyncImage(
+                                        model = item.uri,
+                                        contentDescription = item.name,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                                 if (item.isVideo) {
                                     Text(
                                         "▶ " + Fmt.dur(item.durationMs / 1000.0),
@@ -499,6 +563,7 @@ private fun ViewerOverlay(
     var showInfo by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var current by remember { mutableStateOf(items.getOrNull(startIndex) ?: items.first()) }
+    var chrome by remember { mutableStateOf(true) }
 
     DisposableEffect(Unit) {
         onImmersive(true)
@@ -507,51 +572,73 @@ private fun ViewerOverlay(
     LaunchedEffect(pagerState.currentPage) {
         items.getOrNull(pagerState.currentPage)?.let { current = it }
     }
+    // 看图时功能框 3 秒后自动隐藏，单击画面再唤出
+    LaunchedEffect(pagerState.currentPage, chrome) {
+        if (chrome) {
+            delay(3000)
+            chrome = false
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             val item = items.getOrNull(page) ?: return@HorizontalPager
-            if (item.isVideo) VideoBody(item) else ZoomableImage(item)
+            if (item.isVideo) VideoBody(item, onTap = { chrome = !chrome })
+            else ZoomableImage(item, onTap = { chrome = !chrome })
         }
 
-        Card(
-            Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter),
-            insideMargin = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+        AnimatedVisibility(
+            visible = chrome,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(animationSpec = tween(160)),
+            exit = fadeOut(animationSpec = tween(200)),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) {
-                    Icon(MiuixIcons.Regular.Close, contentDescription = "关闭")
-                }
-                Text(
-                    "${pagerState.currentPage + 1} / ${items.size}",
-                    style = MiuixTheme.textStyles.main,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = { showInfo = true }) {
-                    Icon(MiuixIcons.Regular.Info, contentDescription = "详情")
-                }
-                IconButton(onClick = { shareMedia(ctx, current) }) {
-                    Icon(MiuixIcons.Regular.Share, contentDescription = "分享")
-                }
-                IconButton(onClick = { confirmDelete = true }) {
-                    Icon(MiuixIcons.Regular.Delete, contentDescription = "删除")
+            Card(
+                Modifier.fillMaxWidth().padding(12.dp),
+                insideMargin = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onClose) {
+                        Icon(MiuixIcons.Regular.Close, contentDescription = "关闭")
+                    }
+                    Text(
+                        "${pagerState.currentPage + 1} / ${items.size}",
+                        style = MiuixTheme.textStyles.main,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { showInfo = true }) {
+                        Icon(MiuixIcons.Regular.Info, contentDescription = "详情")
+                    }
+                    IconButton(onClick = { shareMedia(ctx, current) }) {
+                        Icon(MiuixIcons.Regular.Share, contentDescription = "分享")
+                    }
+                    IconButton(onClick = { confirmDelete = true }) {
+                        Icon(MiuixIcons.Regular.Delete, contentDescription = "删除")
+                    }
                 }
             }
         }
 
-        Card(
-            Modifier.fillMaxWidth().padding(12.dp).align(Alignment.BottomCenter),
-            insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        AnimatedVisibility(
+            visible = chrome,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = fadeIn(animationSpec = tween(160)),
+            exit = fadeOut(animationSpec = tween(200)),
         ) {
-            Column(Modifier.fillMaxWidth()) {
-                Text(current.name, style = MiuixTheme.textStyles.body2)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    Fmt.size(current.size) + " · " + dateTime(current.added) +
-                        if (current.width > 0) " · ${current.width}×${current.height}" else "",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
+            Card(
+                Modifier.fillMaxWidth().padding(12.dp),
+                insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(current.name, style = MiuixTheme.textStyles.body2)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        Fmt.size(current.size) + " · " + dateTime(current.added) +
+                            if (current.width > 0) " · ${current.width}×${current.height}" else "",
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                }
             }
         }
     }
@@ -598,7 +685,7 @@ private fun ViewerOverlay(
 
 /** 单张图片：双击缩放；只有放大状态下才接手拖拽手势，否则把横滑让给翻页 */
 @Composable
-private fun ZoomableImage(item: MediaItem) {
+private fun ZoomableImage(item: MediaItem, onTap: () -> Unit) {
     var scale by remember(item.uri) { mutableStateOf(1f) }
     var panX by remember(item.uri) { mutableStateOf(0f) }
     var panY by remember(item.uri) { mutableStateOf(0f) }
@@ -610,6 +697,7 @@ private fun ZoomableImage(item: MediaItem) {
             .fillMaxSize()
             .pointerInput(item.uri) {
                 detectTapGestures(
+                    onTap = { onTap() },
                     onDoubleTap = {
                         if (zoomed) {
                             scale = 1f
@@ -653,7 +741,7 @@ private fun ZoomableImage(item: MediaItem) {
 }
 
 @Composable
-private fun VideoBody(item: MediaItem) {
+private fun VideoBody(item: MediaItem, onTap: () -> Unit) {
     var videoView by remember(item.uri) { mutableStateOf<VideoView?>(null) }
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -669,10 +757,19 @@ private fun VideoBody(item: MediaItem) {
                     videoView = this
                 }
             },
-            modifier = Modifier.fillMaxSize().clickable {
-                val v = videoView ?: return@clickable
-                if (v.isPlaying) v.pause() else v.start()
-            },
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(item.uri) {
+                    detectTapGestures(
+                        onTap = { onTap() },
+                        onDoubleTap = {
+                            val v = videoView
+                            if (v != null) {
+                                if (v.isPlaying) v.pause() else v.start()
+                            }
+                        },
+                    )
+                },
         )
     }
 }
