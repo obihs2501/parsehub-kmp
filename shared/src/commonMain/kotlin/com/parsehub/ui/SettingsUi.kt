@@ -396,12 +396,45 @@ fun AppearanceSettings(config: AppConfig, onConfig: (AppConfig) -> Unit) {
 }
 
 @Composable
-fun DownloadSettings(config: AppConfig, onConfig: (AppConfig) -> Unit) {
+fun DownloadSettings(
+    config: AppConfig,
+    onConfig: (AppConfig) -> Unit,
+    rootLabel: String = "",
+    onPickFolder: (() -> Unit)? = null,
+) {
     Column(
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        PageHero("下载", "分片连接数与超时")
+        PageHero("下载", "保存位置、分片连接数与超时")
+
+        SectionLabel("保存位置")
+        Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    rootLabel.ifBlank { "Download/" },
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (onPickFolder != null) {
+                        Button(onClick = onPickFolder) { Text("选择文件夹", style = MiuixTheme.textStyles.button) }
+                    }
+                    TextButton(text = "恢复默认位置", onClick = { onConfig(config.copy(treeUri = "")) })
+                }
+                TextField(
+                    value = config.downloadRootDir,
+                    onValueChange = { onConfig(config.copy(downloadRootDir = it)) },
+                    label = "Download 下的子目录（留空即直接放 Download）",
+                    useLabelAsPlaceholder = true,
+                )
+                Text(
+                    "最终落点 = 保存位置 / 文件夹模板；选了系统目录就直接写进去，默认模式写媒体库 Download 下，相册立即可见。",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+        }
 
         SectionLabel("分片连接数")
         Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(16.dp)) {

@@ -34,6 +34,10 @@ data class AppConfig(
     val timeoutSec: Int = 180,
     val imagesByDefault: Boolean = true,         // 解析后默认勾选图集
     val saveJson: Boolean = false,               // 是否同时保存作品元数据 json
+    /** Download 目录下的子目录（默认空 = 直接放 Download/<模板目录>） */
+    val downloadRootDir: String = "",
+    /** 用户通过系统目录选择器指定的保存位置（SAF 树 URI，空 = 用媒体库默认路径） */
+    val treeUri: String = "",
 ) {
     /** 取出该平台当前应使用的 Cookie（轮换） */
     fun cookieFor(platformKey: String, turn: Int): String {

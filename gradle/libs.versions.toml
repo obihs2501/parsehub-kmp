@@ -9,6 +9,7 @@ coroutines = "1.10.2"
 activityCompose = "1.13.0"
 okio = "3.9.0"
 coil = "3.6.3"
+documentfile = "1.0.1"
 
 [libraries]
 miuix-ui-android = { module = "top.yukonga.miuix.kmp:miuix-ui-android", version.ref = "miuix" }
@@ -32,6 +33,7 @@ kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
 jetbrains-compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
 
 [plugins]

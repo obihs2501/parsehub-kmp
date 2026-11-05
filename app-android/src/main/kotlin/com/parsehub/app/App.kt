@@ -6,6 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -82,18 +84,18 @@ private enum class Tab(val title: String, val icon: ImageVector) {
 fun App(sharedText: MutableState<String>) {
     val ctx = LocalContext.current
     val store = remember { AndroidStore(ctx) }
+    var config by remember { mutableStateOf(store.loadConfig()) }
+    val sink = remember { AndroidSink(ctx) { config } }
     val controller = remember {
         HubController(
             tempDir = (ctx.cacheDir.absolutePath + "/parsehub_dl").toPath(),
-            sink = MediaStoreSink(ctx),
-            initialConfig = store.loadConfig(),
+            sink = sink,
+            initialConfig = config,
             history = store.history(),
             onConfigChanged = { store.saveConfig(it) },
         )
     }
     val scope = rememberCoroutineScope()
-
-    var config by remember { mutableStateOf(controller.config) }
     var tab by remember { mutableStateOf(Tab.PARSE) }
     var page by remember { mutableStateOf<SettingsPage?>(null) }
     var toast by remember { mutableStateOf("") }
@@ -102,6 +104,15 @@ fun App(sharedText: MutableState<String>) {
     fun applyConfig(next: AppConfig) {
         config = next
         controller.updateConfig(next)
+    }
+
+    // 系统目录选择器：选完持久化读写权限，之后直接往该目录写
+    val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching { ctx.contentResolver.takePersistableUriPermission(uri, SAF_FLAGS) }
+            applyConfig(config.copy(treeUri = uri.toString()))
+            toast = "保存位置已切换"
+        }
     }
 
     LaunchedEffect(sharedText.value) {
@@ -182,7 +193,12 @@ fun App(sharedText: MutableState<String>) {
                                     SettingsPage.ALIASES -> AliasSettings(config) { applyConfig(it) }
                                     SettingsPage.COOKIES -> CookieSettings(config) { applyConfig(it) }
                                     SettingsPage.APPEARANCE -> AppearanceSettings(config) { applyConfig(it) }
-                                    SettingsPage.DOWNLOAD -> DownloadSettings(config) { applyConfig(it) }
+                                    SettingsPage.DOWNLOAD -> DownloadSettings(
+                                        config = config,
+                                        onConfig = { applyConfig(it) },
+                                        rootLabel = sink.describe(),
+                                        onPickFolder = { treePicker.launch(null) },
+                                    )
                                     SettingsPage.ABOUT -> AboutSettings { url -> openUrl(ctx, url) }
                                 }
                                 key == Tab.PARSE.name -> {
