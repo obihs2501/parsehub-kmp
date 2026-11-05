@@ -26,6 +26,7 @@ object Hub {
             Platform.XHS -> XhsParser.parse(text, opts)
             Platform.DOUBAN -> DoubanParser.parse(text, opts)
             Platform.COOLAPK -> CoolapkParser.parse(text, opts)
+            Platform.WEIXIN -> WeixinParser.parse(text, opts)
         }
     }
 }

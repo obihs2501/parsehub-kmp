@@ -97,6 +97,7 @@ fun App(sharedText: MutableState<String>) {
     var tab by remember { mutableStateOf(Tab.PARSE) }
     var page by remember { mutableStateOf<SettingsPage?>(null) }
     var toast by remember { mutableStateOf("") }
+    var immersive by remember { mutableStateOf(false) }
 
     fun applyConfig(next: AppConfig) {
         config = next
@@ -130,29 +131,33 @@ fun App(sharedText: MutableState<String>) {
         Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
             Scaffold(
                 topBar = {
-                    SmallTopAppBar(
-                        title = page?.title ?: tab.title,
-                        navigationIcon = {
-                            if (page != null) {
-                                IconButton(onClick = { page = null }) {
-                                    Icon(MiuixIcons.Regular.Back, contentDescription = "返回")
+                    if (!immersive) {
+                        SmallTopAppBar(
+                            title = page?.title ?: tab.title,
+                            navigationIcon = {
+                                if (page != null) {
+                                    IconButton(onClick = { page = null }) {
+                                        Icon(MiuixIcons.Regular.Back, contentDescription = "返回")
+                                    }
                                 }
-                            }
-                        },
-                    )
+                            },
+                        )
+                    }
                 },
                 bottomBar = {
-                    NavigationBar {
-                        Tab.entries.forEach { t ->
-                            NavigationBarItem(
-                                selected = page == null && tab == t,
-                                onClick = {
-                                    page = null
-                                    tab = t
-                                },
-                                icon = t.icon,
-                                label = t.title,
-                            )
+                    if (!immersive) {
+                        NavigationBar {
+                            Tab.entries.forEach { t ->
+                                NavigationBarItem(
+                                    selected = page == null && tab == t,
+                                    onClick = {
+                                        page = null
+                                        tab = t
+                                    },
+                                    icon = t.icon,
+                                    label = t.title,
+                                )
+                            }
                         }
                     }
                 },
@@ -185,7 +190,11 @@ fun App(sharedText: MutableState<String>) {
                                     ParseScreen(controller, readClipboard = { clip.getText()?.text })
                                 }
                                 key == Tab.TASKS.name -> TasksScreen(controller)
-                                key == Tab.GALLERY.name -> GalleryScreen(ctx) { toast = it }
+                                key == Tab.GALLERY.name -> GalleryScreen(
+                                    ctx = ctx,
+                                    onMessage = { toast = it },
+                                    onImmersive = { immersive = it },
+                                )
                                 key == Tab.HISTORY.name -> HistoryScreen(controller) { csv ->
                                     scope.launch {
                                         val name = exportCsv(ctx, csv)
