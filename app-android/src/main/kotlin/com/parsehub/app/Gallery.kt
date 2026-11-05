@@ -22,7 +22,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -99,17 +98,15 @@ import android.app.Activity
 import android.os.Build
 import android.view.View
 import android.view.WindowInsetsController
-import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.calculateCentroid
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.size
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.style.TextOverflow
+import me.saket.telephoto.zoomable.EnabledZoomGestures
+import me.saket.telephoto.zoomable.ZoomSpec
+import me.saket.telephoto.zoomable.rememberZoomableState
+import me.saket.telephoto.zoomable.zoomable
 
 internal data class MediaItem(
     val uri: Uri,
@@ -763,80 +760,27 @@ private fun ViewerOverlay(
 }
 
 /**
- * 单张图片：双指捏合缩放（1x–8x）、放大后可拖拽、双击缩放、单击切换功能栏。
- * 未放大时单指横向滑动不拦截，交给外层 Pager 翻页。
+ * 单张图片：使用 Telephoto 的 zoomable（惯性甩动、橡皮筋回弹、以手指为锚点的平滑缩放）。
+ * 未放大时禁用单指拖拽，把横滑让给外层 Pager 翻页；放大后自动接管拖拽。
  */
 @Composable
 private fun ZoomableImage(item: MediaItem, onTap: () -> Unit, onZoomChange: (Boolean) -> Unit) {
-    var scale by remember(item.uri) { mutableStateOf(1f) }
-    var pan by remember(item.uri) { mutableStateOf(Offset.Zero) }
-    val animScale by animateFloatAsState(targetValue = scale, animationSpec = tween(180), label = "scale")
-    val animPan by animateOffsetAsState(targetValue = pan, animationSpec = tween(180), label = "pan")
+    val state = rememberZoomableState(ZoomSpec(maxZoomFactor = 6f))
+    val zoomed = (state.zoomFraction ?: 0f) > 0.01f
+    LaunchedEffect(zoomed) { onZoomChange(zoomed) }
 
-    LaunchedEffect(scale > 1.01f) { onZoomChange(scale > 1.01f) }
-
-    Box(
-        Modifier
+    AsyncImage(
+        model = item.uri,
+        contentDescription = item.name,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier
             .fillMaxSize()
-            .pointerInput(item.uri) {
-                detectTapGestures(
-                    onTap = { onTap() },
-                    onDoubleTap = {
-                        if (scale > 1.01f) {
-                            scale = 1f
-                            pan = Offset.Zero
-                        } else {
-                            scale = 2.5f
-                        }
-                    },
-                )
-            }
-            .pointerInput(item.uri) {
-                awaitEachGesture {
-                    var active = false
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val pressed = event.changes.count { it.pressed }
-                        if (pressed == 0) break
-                        // 两指以上，或已经放大过：接管手势
-                        if (!active && (pressed >= 2 || scale > 1.01f)) active = true
-                        if (!active) continue
-                        val zoomChange = event.calculateZoom()
-                        val panChange = event.calculatePan()
-                        if (zoomChange != 1f || panChange != Offset.Zero) {
-                            val prev = scale
-                            val next = (scale * zoomChange).coerceIn(1f, 8f)
-                            // 以捏合中心为锚点缩放，手指下的画面不跑
-                            val center = Offset(size.width / 2f, size.height / 2f)
-                            val c = event.calculateCentroid(useCurrent = true) - center
-                            val ratio = if (prev <= 0.01f) 1f else next / prev
-                            scale = next
-                            pan = if (next <= 1.01f) {
-                                Offset.Zero
-                            } else {
-                                c * (1f - ratio) + pan * ratio + panChange
-                            }
-                        }
-                        event.changes.forEach { if (it.pressed) it.consume() }
-                    }
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        AsyncImage(
-            model = item.uri,
-            contentDescription = item.name,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = animScale,
-                    scaleY = animScale,
-                    translationX = animPan.x,
-                    translationY = animPan.y,
-                ),
-        )
-    }
+            .zoomable(
+                state = state,
+                gestures = EnabledZoomGestures(zoom = true, pan = zoomed),
+                onClick = { onTap() },
+            ),
+    )
 }
 
 @Composable
