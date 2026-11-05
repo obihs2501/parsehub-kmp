@@ -131,7 +131,7 @@ fun App(sharedText: MutableState<String>) {
     }
     val lightIcons = !(darkUi || immersive)
     DisposableEffect(darkUi, immersive) {
-        ctx.findActivity()?.enableEdgeToEdge(
+        (ctx.findActivity() as? androidx.activity.ComponentActivity)?.enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
                 android.graphics.Color.TRANSPARENT,
                 android.graphics.Color.TRANSPARENT,
