@@ -82,6 +82,7 @@ class HubController(
     var link by mutableStateOf("")
     var parsing by mutableStateOf(false)
     var downloading by mutableStateOf(false)
+    var cancelling by mutableStateOf(false)
     var error by mutableStateOf("")
     var note by mutableStateOf("")
 
@@ -281,6 +282,7 @@ class HubController(
         }
         downloading = true
         cancelRequested = false
+        cancelling = false
         error = ""
         doneJobs = 0
         totalJobs = jobs.size
@@ -368,12 +370,16 @@ class HubController(
                 )
             } finally {
                 downloading = false
+                cancelling = false
             }
         }
     }
 
     fun cancel() {
-        if (downloading) cancelRequested = true
+        if (!downloading) return
+        cancelRequested = true
+        cancelling = true
+        note = "正在取消…"
     }
 
     // ------------------------------------------------------------ 记录

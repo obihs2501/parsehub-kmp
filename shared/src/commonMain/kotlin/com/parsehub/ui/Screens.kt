@@ -4,8 +4,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -20,8 +23,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.parsehub.HubController
 import com.parsehub.core.Fmt
 import com.parsehub.core.HistoryEntry
@@ -125,6 +131,37 @@ fun ParseScreen(
                     InfoRow("发布", if (r.date.isBlank()) "未知" else r.date)
                     if (r.durSec > 0) InfoRow("时长", Fmt.dur(r.durSec))
                     if (r.statLine.isNotEmpty()) InfoRow("数据", r.statLine)
+                    if (r.images.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "媒体预览 · ${r.images.size} 张" +
+                                if (r.tiers.isNotEmpty()) " · 视频 ${r.tiers.size} 档" else "",
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            r.images.take(12).forEach { im ->
+                                AsyncImage(
+                                    model = im.url,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(76.dp).clip(RoundedCornerShape(10.dp)),
+                                )
+                            }
+                            if (r.images.size > 12) {
+                                Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        "+${r.images.size - 12}",
+                                        style = MiuixTheme.textStyles.footnote2,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -179,9 +216,22 @@ fun ParseScreen(
                             color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                         )
                         ProgressLine(c.curDone, c.curTotal, c.speed)
-                        Button(onClick = { c.cancel() }, modifier = Modifier.fillMaxWidth()) {
-                            Text("取消", style = MiuixTheme.textStyles.button)
+                        Button(
+                            onClick = { c.cancel() },
+                            enabled = !c.cancelling,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(if (c.cancelling) "正在取消…" else "取消下载", style = MiuixTheme.textStyles.button)
                         }
+                        Text(
+                            if (c.cancelling) {
+                                "已收到取消，正在停当前分片，稍等一两秒"
+                            } else {
+                                "取消只停掉没下完的部分，已保存的文件保留"
+                            },
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
                     }
                 }
             } else {
@@ -275,16 +325,33 @@ fun TasksScreen(c: HubController) {
                                     else -> MiuixTheme.colorScheme.primary
                                 },
                             )
+                            if (t.status == "running") {
+                                val frac = if (c.curTotal > 0) {
+                                    (c.curDone.toFloat() / c.curTotal).coerceIn(0f, 1f)
+                                } else {
+                                    null
+                                }
+                                LinearProgressIndicator(
+                                    progress = frac,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                ProgressLine(c.curDone, c.curTotal, c.speed)
+                            }
                         }
-                        Text(
-                            when (t.status) {
-                                "done" -> "完成"
-                                "fail" -> "失败"
-                                else -> "进行中"
-                            },
-                            style = MiuixTheme.textStyles.footnote2,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
+                        if (t.status == "running") {
+                            TextButton(
+                                text = if (c.cancelling) "取消中" else "取消",
+                                onClick = { c.cancel() },
+                                enabled = !c.cancelling,
+                            )
+                        } else {
+                            Text(
+                                if (t.status == "done") "完成" else "失败",
+                                style = MiuixTheme.textStyles.footnote2,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
                     }
                 }
             }
