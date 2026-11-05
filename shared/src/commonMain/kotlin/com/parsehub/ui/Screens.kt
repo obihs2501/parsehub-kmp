@@ -56,6 +56,7 @@ fun ParseScreen(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(bottom = LocalPageBottomPadding.current)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -304,6 +305,7 @@ fun TasksScreen(c: HubController) {
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(bottom = LocalPageBottomPadding.current)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -379,6 +381,7 @@ fun HistoryScreen(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(bottom = LocalPageBottomPadding.current)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

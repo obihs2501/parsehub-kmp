@@ -65,6 +65,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
+import com.parsehub.ui.LocalPageBottomPadding
 import com.parsehub.core.AppConfig
 import com.parsehub.core.Fmt
 import com.parsehub.core.dateTime
@@ -489,7 +490,7 @@ internal fun GalleryScreen(
                     }),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(bottom = 24.dp),
+                contentPadding = PaddingValues(bottom = 24.dp + LocalPageBottomPadding.current),
             ) {
                 if (childFolders.isNotEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {

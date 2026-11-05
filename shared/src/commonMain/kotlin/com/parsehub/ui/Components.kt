@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +34,9 @@ import com.parsehub.core.Fmt
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+/** Extra clearance inside page scroll content; desktop and non-floating hosts keep zero. */
+val LocalPageBottomPadding = staticCompositionLocalOf { 0.dp }
 
 /** Miuix 风格的动效基元：轻阻尼弹簧，不做夸张回弹 */
 val PageSpring: FiniteAnimationSpec<IntOffset> = spring(dampingRatio = 0.92f, stiffness = 600f)

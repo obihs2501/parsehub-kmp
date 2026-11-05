@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.parsehub.HubController
 import com.parsehub.core.AppConfig
 import com.parsehub.core.nowCompact
+import com.parsehub.ui.LocalPageBottomPadding
 import com.parsehub.ui.AboutSettings
 import com.parsehub.ui.AliasSettings
 import com.parsehub.ui.AppearanceSettings
@@ -82,6 +84,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.basic.NavigationRail
 import top.yukonga.miuix.kmp.basic.NavigationRailItem
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurBlendMode
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -195,6 +201,14 @@ fun App(sharedText: MutableState<String>) {
             drawContent()
         }
         val glass = config.navStyle == "glass" && isRuntimeShaderSupported()
+        val glassColors = BlurDefaults.blurColors(
+            blendColors = listOf(
+                BlendColorEntry(
+                    color = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = if (darkUi) 0.52f else 0.38f),
+                    mode = BlurBlendMode.SrcOver,
+                ),
+            ),
+        )
         // 大屏（平板 / 横屏）按 Miuix 官方自适应：底栏改为左侧 NavigationRail
         val size = LocalWindowInfo.current.containerDpSize
         val wideScreen = size.width >= 840.dp || (size.width >= 600.dp && size.height / size.width < 1.2f)
@@ -260,7 +274,7 @@ fun App(sharedText: MutableState<String>) {
                             Box(
                                 Modifier
                                     .fillMaxWidth()
-                                    .windowInsetsPadding(WindowInsets.navigationBars)
+                                    // Scaffold already positions floatingToolbar above navigation insets.
                                     .padding(horizontal = 24.dp, vertical = 14.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -269,18 +283,24 @@ fun App(sharedText: MutableState<String>) {
                                     Modifier
                                         .fillMaxWidth()
                                         .height(64.dp)
+                                        .clip(shape)
                                         .then(
                                             if (glass) {
                                                 Modifier.textureBlur(
                                                     backdrop = backdrop,
                                                     shape = shape,
                                                     blurRadius = 20f,
+                                                    colors = glassColors,
+                                                    highlight = if (darkUi) {
+                                                        Highlight.GlassStrokeSmallDark
+                                                    } else {
+                                                        Highlight.GlassStrokeSmallLight
+                                                    },
                                                 )
                                             } else {
                                                 Modifier.background(MiuixTheme.colorScheme.surfaceContainer, shape)
                                             },
-                                        )
-                                        .clip(shape),
+                                        ),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Row(
@@ -303,76 +323,79 @@ fun App(sharedText: MutableState<String>) {
                         }
                     },
                     content = { pad ->
-                        // 悬浮导航不占内容高度，这里额外留出空间，避免遮住列表末尾；大屏无悬浮栏
-                        val floatExtra = if (!immersive && !wideScreen && config.navStyle != "classic") 96.dp else 0.dp
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .layerBackdrop(backdrop)
-                                .padding(
-                                    top = pad.calculateTopPadding(),
-                                    bottom = pad.calculateBottomPadding() + floatExtra,
-                                ),
-                        ) {
-                            AnimatedContent(
-                                targetState = page?.name ?: tab.name,
-                                transitionSpec = {
-                                    (slideInHorizontally(animationSpec = PageSpring) { it / 8 } + fadeIn())
-                                        .togetherWith(slideOutHorizontally(animationSpec = PageSpring) { -it / 8 } + fadeOut())
-                                },
-                                label = "page",
-                            ) { key ->
-                                val currentPage = page
-                                when {
-                                    currentPage != null -> when (currentPage) {
-                                        SettingsPage.NAMING -> NamingSettings(config) { applyConfig(it) }
-                                        SettingsPage.ALIASES -> AliasSettings(config) { applyConfig(it) }
-                                        SettingsPage.COOKIES -> CookieSettings(config) { applyConfig(it) }
-                                        SettingsPage.APPEARANCE -> AppearanceSettings(config) { applyConfig(it) }
-                                        SettingsPage.DOWNLOAD -> DownloadSettings(
+                        // Keep the viewport behind the capsule; clearance belongs inside the scroll content.
+                        val floatingNav = !immersive && !wideScreen && config.navStyle != "classic"
+                        val scrollBottom = if (floatingNav) pad.calculateBottomPadding() + 96.dp else 0.dp
+                        CompositionLocalProvider(LocalPageBottomPadding provides scrollBottom) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .layerBackdrop(backdrop)
+                                    .padding(
+                                        top = pad.calculateTopPadding(),
+                                        bottom = if (floatingNav) 0.dp else pad.calculateBottomPadding(),
+                                    ),
+                            ) {
+                                AnimatedContent(
+                                    targetState = page?.name ?: tab.name,
+                                    transitionSpec = {
+                                        (slideInHorizontally(animationSpec = PageSpring) { it / 8 } + fadeIn())
+                                            .togetherWith(slideOutHorizontally(animationSpec = PageSpring) { -it / 8 } + fadeOut())
+                                    },
+                                    label = "page",
+                                ) { key ->
+                                    val currentPage = page
+                                    when {
+                                        currentPage != null -> when (currentPage) {
+                                            SettingsPage.NAMING -> NamingSettings(config) { applyConfig(it) }
+                                            SettingsPage.ALIASES -> AliasSettings(config) { applyConfig(it) }
+                                            SettingsPage.COOKIES -> CookieSettings(config) { applyConfig(it) }
+                                            SettingsPage.APPEARANCE -> AppearanceSettings(config) { applyConfig(it) }
+                                            SettingsPage.DOWNLOAD -> DownloadSettings(
+                                                config = config,
+                                                onConfig = { applyConfig(it) },
+                                                rootLabel = sink.describe(),
+                                                onPickFolder = { treePicker.launch(null) },
+                                            )
+                                            SettingsPage.ABOUT -> AboutSettings { url -> openUrl(ctx, url) }
+                                        }
+                                        key == Tab.PARSE.name -> {
+                                            val clip = LocalClipboardManager.current
+                                            ParseScreen(controller, readClipboard = { clip.getText()?.text })
+                                        }
+                                        key == Tab.GALLERY.name -> GalleryScreen(
+                                            ctx = ctx,
                                             config = config,
                                             onConfig = { applyConfig(it) },
-                                            rootLabel = sink.describe(),
-                                            onPickFolder = { treePicker.launch(null) },
+                                            onMessage = { toast = it },
+                                            onImmersive = { immersive = it },
                                         )
-                                        SettingsPage.ABOUT -> AboutSettings { url -> openUrl(ctx, url) }
-                                    }
-                                    key == Tab.PARSE.name -> {
-                                        val clip = LocalClipboardManager.current
-                                        ParseScreen(controller, readClipboard = { clip.getText()?.text })
-                                    }
-                                    key == Tab.GALLERY.name -> GalleryScreen(
-                                        ctx = ctx,
-                                        config = config,
-                                        onConfig = { applyConfig(it) },
-                                        onMessage = { toast = it },
-                                        onImmersive = { immersive = it },
-                                    )
-                                    key == Tab.HISTORY.name -> HistoryScreen(
-                                        c = controller,
-                                        onExportCsv = { csv ->
-                                            scope.launch {
-                                                val name = exportCsv(ctx, csv)
-                                                toast = if (name == null) "导出失败" else "已导出到 Download/ParseHub/$name"
-                                            }
-                                        },
-                                        onOpenFiles = { dir, fileNames ->
-                                            scope.launch {
-                                                val items = withContext(Dispatchers.IO) {
-                                                    resolveDownloadedMedia(ctx, dir, fileNames)
+                                        key == Tab.HISTORY.name -> HistoryScreen(
+                                            c = controller,
+                                            onExportCsv = { csv ->
+                                                scope.launch {
+                                                    val name = exportCsv(ctx, csv)
+                                                    toast = if (name == null) "导出失败" else "已导出到 Download/ParseHub/$name"
                                                 }
-                                                if (items.isEmpty()) {
-                                                    toast = "没找到已保存的媒体，确认已授权「所有文件访问」"
-                                                } else {
-                                                    historyViewer = 0 to items
+                                            },
+                                            onOpenFiles = { dir, fileNames ->
+                                                scope.launch {
+                                                    val items = withContext(Dispatchers.IO) {
+                                                        resolveDownloadedMedia(ctx, dir, fileNames)
+                                                    }
+                                                    if (items.isEmpty()) {
+                                                        toast = "没找到已保存的媒体，确认已授权「所有文件访问」"
+                                                    } else {
+                                                        historyViewer = 0 to items
+                                                    }
                                                 }
-                                            }
-                                        },
-                                    )
-                                    else -> SettingsHome(config) { page = it }
+                                            },
+                                        )
+                                        else -> SettingsHome(config) { page = it }
+                                    }
                                 }
                             }
-                        }
+                        } // CompositionLocalProvider
                     },
                 )
             }   // Box(weight)

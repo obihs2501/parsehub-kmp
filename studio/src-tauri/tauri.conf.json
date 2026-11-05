@@ -1,0 +1,70 @@
+{
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devPath": "http://localhost:1420",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "ParseHub Studio",
+    "version": "../package.json"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "dialog": {
+        "open": true,
+        "save": true
+      },
+      "fs": {
+        "writeFile": true,
+        "scope": []
+      },
+      "shell": {
+        "open": "^(https?://[^\\s]+|[A-Za-z]:[\\\\/][^\\r\\n]*)$"
+      },
+      "protocol": {
+        "asset": true,
+        "assetScope": [
+          "**"
+        ]
+      },
+      "clipboard": {
+        "readText": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "targets": [
+        "nsis"
+      ],
+      "identifier": "com.parsehub.studio",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "resources": [
+        "runtime/**/*",
+        "sidecar/parsehub-sidecar.jar"
+      ]
+    },
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: https: http:; media-src 'self' asset: http://asset.localhost blob:; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-src 'none'"
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "resizable": true,
+        "title": "ParseHub Studio",
+        "width": 1100,
+        "height": 760,
+        "minWidth": 800,
+        "minHeight": 600,
+        "decorations": true
+      }
+    ]
+  }
+}

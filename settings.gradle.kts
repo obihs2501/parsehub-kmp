@@ -26,6 +26,8 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "parsehub-kmp"
+include(":kernel")
+include(":sidecar")
 include(":shared")
 include(":app-android")
 include(":app-desktop")
