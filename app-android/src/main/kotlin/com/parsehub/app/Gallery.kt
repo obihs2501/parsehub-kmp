@@ -68,6 +68,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
+import com.parsehub.core.AppConfig
 import com.parsehub.core.Fmt
 import com.parsehub.core.dateTime
 import com.parsehub.ui.EmptyHint
