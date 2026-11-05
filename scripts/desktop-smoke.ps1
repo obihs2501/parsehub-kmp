@@ -3,7 +3,12 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $release = Join-Path $root 'studio/src-tauri/target/release'
 $exe = Join-Path $release 'parsehub-studio.exe'
-if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Desktop executable missing.' }
+if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+    $candidates = @(Get-ChildItem -LiteralPath $release -Filter '*.exe' -File)
+    if ($candidates.Count -ne 1) { throw "Expected one desktop executable in ${release}; found: $($candidates.Name -join ', ')" }
+    $exe = $candidates[0].FullName
+}
+Write-Host "Checking desktop executable: $exe"
 foreach ($name in @('runtime', 'sidecar')) {
     if (-not (Test-Path -LiteralPath (Join-Path $release $name))) {
         Copy-Item -LiteralPath (Join-Path $root "studio/src-tauri/$name") -Destination $release -Recurse

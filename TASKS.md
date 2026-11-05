@@ -13,8 +13,8 @@ All compilation, tests and packaging run on GitHub Actions only. Source implemen
 | T7 Android glass | Small-screen capture, glass blend/highlight and scroll-content inset fixes implemented | CI APK and device visual validation without changing density/resolution |
 | T8 Delivery | GitHub Android/JVM/Windows pipeline and diagnostics implemented | Successful run and artifact links; install/device acceptance |
 
-- [ ] CI Android APK and launcher dex verified
-- [ ] CI kernel/sidecar regressions and fat JAR API smoke verified
+- [x] CI Android APK and launcher dex verified (run 41996665400)
+- [x] CI kernel/sidecar regressions and fat JAR API smoke verified (run 41996665400; 6 kernel + 2 sidecar tests)
 - [ ] CI Windows installer and graceful JVM shutdown verified
 - [ ] Windows installed-app acceptance verified
 - [ ] Android small-screen glass visually verified

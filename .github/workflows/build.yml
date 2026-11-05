@@ -122,4 +122,5 @@ jobs:
             studio/src-tauri/Cargo.lock
             studio/src-tauri/target/release/desktop-smoke.log
             studio/src-tauri/target/release/smoke-data/**/sidecar-stderr.log
+            studio/src-tauri/target/release/smoke-data/sidecar-stderr.log
           retention-days: 7
