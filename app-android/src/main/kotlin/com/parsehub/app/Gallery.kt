@@ -95,6 +95,21 @@ import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import android.app.Activity
+import android.os.Build
+import android.view.View
+import android.view.WindowInsetsController
+import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextOverflow
 
 internal data class MediaItem(
     val uri: Uri,
@@ -414,7 +429,7 @@ internal fun GalleryScreen(
                         SmallTitle(text = "文件夹")
                     }
                     for ((name, count) in childFolders) {
-                        item(key = "dir:$name") {
+                        item(key = "dir:$name", span = { GridItemSpan(maxLineSpan) }) {
                             FolderCard(name = name, count = count) {
                                 stack = stack + name
                                 selected = emptySet()
@@ -577,25 +592,31 @@ internal fun GalleryScreen(
 @Composable
 private fun FolderCard(name: String, count: Int, onOpen: () -> Unit) {
     Card(
-        Modifier.aspectRatio(1f).clickable { onOpen() },
-        insideMargin = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().height(76.dp).clickable { onOpen() },
+        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Spacer(Modifier.weight(1f))
-        Icon(MiuixIcons.Regular.Folder, contentDescription = null, modifier = Modifier.align(Alignment.CenterHorizontally))
-        Spacer(Modifier.height(6.dp))
-        Text(
-            name,
-            style = MiuixTheme.textStyles.footnote2,
-            color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-        )
-        Text(
-            "$count 项",
-            style = MiuixTheme.textStyles.footnote2,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-        )
-        Spacer(Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(MiuixIcons.Regular.Folder, contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    name,
+                    style = MiuixTheme.textStyles.body2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "$count 项",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            Text(
+                "›",
+                style = MiuixTheme.textStyles.title3,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
     }
 }
 
@@ -614,13 +635,39 @@ private fun ViewerOverlay(
     var confirmDelete by remember { mutableStateOf(false) }
     var current by remember { mutableStateOf(items.getOrNull(startIndex) ?: items.first()) }
     var chrome by remember { mutableStateOf(true) }
+    var zoomed by remember { mutableStateOf(false) }
 
+    // 看图时背景是黑的：状态栏图标改成白色，退出时还原
     DisposableEffect(Unit) {
         onImmersive(true)
-        onDispose { onImmersive(false) }
+        val window = (ctx as? Activity)?.window
+        val controller = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) window?.insetsController else null
+        val prevLight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            (controller?.systemBarsAppearance ?: 0) and WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+        } else 0
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            controller?.setSystemBarsAppearance(0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
+        } else {
+            @Suppress("DEPRECATION")
+            window?.decorView?.let { v ->
+                v.systemUiVisibility = v.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+            }
+        }
+        onDispose {
+            onImmersive(false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                controller?.setSystemBarsAppearance(prevLight, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
+            } else {
+                @Suppress("DEPRECATION")
+                window?.decorView?.let { v ->
+                    v.systemUiVisibility = v.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                }
+            }
+        }
     }
     LaunchedEffect(pagerState.currentPage) {
         items.getOrNull(pagerState.currentPage)?.let { current = it }
+        zoomed = false
     }
     // 进入看图时先显示，3 秒后自动隐藏；之后由单击画面决定显示/隐藏
     LaunchedEffect(Unit) {
@@ -629,31 +676,63 @@ private fun ViewerOverlay(
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = !zoomed,
+        ) { page ->
             val item = items.getOrNull(page) ?: return@HorizontalPager
-            if (item.isVideo) VideoBody(item, onTap = { chrome = !chrome })
-            else ZoomableImage(item, onTap = { chrome = !chrome })
+            if (item.isVideo) {
+                VideoBody(item, onTap = { chrome = !chrome })
+            } else {
+                ZoomableImage(item, onTap = { chrome = !chrome }, onZoomChange = { zoomed = it })
+            }
         }
 
+        // 顶部渐变遮罩：保证状态栏时间和图标在任何图片上都看得清
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(140.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.62f), Color.Transparent),
+                    ),
+                ),
+        )
+
+        // 顶栏与文件名合并成一条
         AnimatedVisibility(
             visible = chrome,
             modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars),
-            enter = fadeIn(animationSpec = tween(160)),
-            exit = fadeOut(animationSpec = tween(200)),
+            enter = fadeIn(animationSpec = tween(160)) + slideInVertically(animationSpec = tween(180)) { -it / 3 },
+            exit = fadeOut(animationSpec = tween(200)) + slideOutVertically(animationSpec = tween(180)) { -it / 3 },
         ) {
             Card(
-                Modifier.fillMaxWidth().padding(12.dp),
-                insideMargin = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                insideMargin = PaddingValues(start = 4.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onClose) {
                         Icon(MiuixIcons.Regular.Close, contentDescription = "关闭")
                     }
-                    Text(
-                        "${pagerState.currentPage + 1} / ${items.size}",
-                        style = MiuixTheme.textStyles.main,
-                        modifier = Modifier.weight(1f),
-                    )
+                    Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                        Text(
+                            current.name,
+                            style = MiuixTheme.textStyles.body2,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "${pagerState.currentPage + 1}/${items.size} · " + Fmt.size(current.size) +
+                                if (current.width > 0) " · ${current.width}×${current.height}" else "",
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     IconButton(onClick = { showInfo = true }) {
                         Icon(MiuixIcons.Regular.Info, contentDescription = "详情")
                     }
@@ -663,29 +742,6 @@ private fun ViewerOverlay(
                     IconButton(onClick = { confirmDelete = true }) {
                         Icon(MiuixIcons.Regular.Delete, contentDescription = "删除")
                     }
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = chrome,
-            modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars),
-            enter = fadeIn(animationSpec = tween(160)),
-            exit = fadeOut(animationSpec = tween(200)),
-        ) {
-            Card(
-                Modifier.fillMaxWidth().padding(12.dp),
-                insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                Column(Modifier.fillMaxWidth()) {
-                    Text(current.name, style = MiuixTheme.textStyles.body2)
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        Fmt.size(current.size) + " · " + relativeDate(current.added) +
-                            if (current.width > 0) " · ${current.width}×${current.height}" else "",
-                        style = MiuixTheme.textStyles.footnote2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
                 }
             }
         }
@@ -731,14 +787,18 @@ private fun ViewerOverlay(
     }
 }
 
-/** 单张图片：双击缩放；只有放大状态下才接手拖拽手势，否则把横滑让给翻页 */
+/**
+ * 单张图片：双指捏合缩放（1x–8x）、放大后可拖拽、双击缩放、单击切换功能栏。
+ * 未放大时单指横向滑动不拦截，交给外层 Pager 翻页。
+ */
 @Composable
-private fun ZoomableImage(item: MediaItem, onTap: () -> Unit) {
+private fun ZoomableImage(item: MediaItem, onTap: () -> Unit, onZoomChange: (Boolean) -> Unit) {
     var scale by remember(item.uri) { mutableStateOf(1f) }
-    var panX by remember(item.uri) { mutableStateOf(0f) }
-    var panY by remember(item.uri) { mutableStateOf(0f) }
-    val zoomed = scale > 1f
-    val animatedScale by animateFloatAsState(targetValue = scale, animationSpec = tween(160), label = "scale")
+    var pan by remember(item.uri) { mutableStateOf(Offset.Zero) }
+    val animScale by animateFloatAsState(targetValue = scale, animationSpec = tween(180), label = "scale")
+    val animPan by animateOffsetAsState(targetValue = pan, animationSpec = tween(180), label = "pan")
+
+    LaunchedEffect(scale > 1.01f) { onZoomChange(scale > 1.01f) }
 
     Box(
         Modifier
@@ -747,29 +807,45 @@ private fun ZoomableImage(item: MediaItem, onTap: () -> Unit) {
                 detectTapGestures(
                     onTap = { onTap() },
                     onDoubleTap = {
-                        if (zoomed) {
+                        if (scale > 1.01f) {
                             scale = 1f
-                            panX = 0f
-                            panY = 0f
+                            pan = Offset.Zero
                         } else {
                             scale = 2.5f
                         }
                     },
                 )
             }
-            .then(
-                if (zoomed) {
-                    Modifier.pointerInput(item.uri, zoomed) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 8f)
-                            panX += pan.x
-                            panY += pan.y
+            .pointerInput(item.uri) {
+                awaitEachGesture {
+                    var active = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.count { it.pressed }
+                        if (pressed == 0) break
+                        // 两指以上，或已经放大过：接管手势
+                        if (!active && (pressed >= 2 || scale > 1.01f)) active = true
+                        if (!active) continue
+                        val zoomChange = event.calculateZoom()
+                        val panChange = event.calculatePan()
+                        if (zoomChange != 1f || panChange != Offset.Zero) {
+                            val prev = scale
+                            val next = (scale * zoomChange).coerceIn(1f, 8f)
+                            // 以捏合中心为锚点缩放，手指下的画面不跑
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            val c = event.calculateCentroid(useCurrent = true) - center
+                            val ratio = if (prev <= 0.01f) 1f else next / prev
+                            scale = next
+                            pan = if (next <= 1.01f) {
+                                Offset.Zero
+                            } else {
+                                c * (1f - ratio) + pan * ratio + panChange
+                            }
                         }
+                        event.changes.forEach { if (it.pressed) it.consume() }
                     }
-                } else {
-                    Modifier
-                },
-            ),
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         AsyncImage(
@@ -779,10 +855,10 @@ private fun ZoomableImage(item: MediaItem, onTap: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer(
-                    scaleX = animatedScale,
-                    scaleY = animatedScale,
-                    translationX = panX,
-                    translationY = panY,
+                    scaleX = animScale,
+                    scaleY = animScale,
+                    translationX = animPan.x,
+                    translationY = animPan.y,
                 ),
         )
     }
