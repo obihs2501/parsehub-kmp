@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -106,6 +108,8 @@ fun DesktopApp() {
     var tab by remember { mutableStateOf(Tab.PARSE) }
     var page by remember { mutableStateOf<SettingsPage?>(null) }
     var toast by remember { mutableStateOf("") }
+    // 缩略图缓存跨 tab 保留：切回图库不再重复解码（此前在组合期同步 ImageIO.read，切 tab 会卡）
+    val thumbCache = remember { mutableStateMapOf<String, ImageBitmap>() }
 
     fun applyConfig(next: AppConfig) {
         config = next
@@ -150,6 +154,7 @@ fun DesktopApp() {
                         key == Tab.TASKS.name -> TasksScreen(controller)
                         key == Tab.GALLERY.name -> DesktopGallery(
                             root = File(outDir),
+                            thumbCache = thumbCache,
                             onMessage = { toast = it },
                         )
                         key == Tab.HISTORY.name -> HistoryScreen(controller) { csv ->
@@ -241,15 +246,34 @@ private fun OutDirBar(outDir: String, onPick: () -> Unit, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun DesktopGallery(root: File, onMessage: (String) -> Unit) {
+private fun DesktopGallery(
+    root: File,
+    thumbCache: MutableMap<String, ImageBitmap>,
+    onMessage: (String) -> Unit,
+) {
     var files by remember { mutableStateOf<List<LocalFile>>(emptyList()) }
     var reload by remember { mutableStateOf(0) }
     var newestFirst by remember { mutableStateOf(true) }
     var columns by remember { mutableStateOf(4) }
     var subFolder by remember { mutableStateOf("") }
+    var scanning by remember { mutableStateOf(false) }
 
     LaunchedEffect(root, reload) {
+        scanning = true
         files = withContext(Dispatchers.IO) { scanLocal(root) }
+        scanning = false
+    }
+
+    // 缩略图在后台解码，解完再整体写入缓存（组合期不再做磁盘/解码工作）
+    LaunchedEffect(files) {
+        val missing = files.filter { !it.isVideo && !thumbCache.containsKey(it.file.path) }.take(300)
+        if (missing.isEmpty()) return@LaunchedEffect
+        val decoded = withContext(Dispatchers.IO) {
+            buildMap {
+                missing.forEach { f -> loadThumb(f.file)?.let { put(f.file.path, it) } }
+            }
+        }
+        thumbCache.putAll(decoded)
     }
 
     val subFolders = remember(files, root) {
@@ -264,7 +288,7 @@ private fun DesktopGallery(root: File, onMessage: (String) -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
-                PageHero("本地图库", "${shown.size} 项 · ${root.absolutePath}")
+                PageHero("本地图库", "${shown.size} 项 · ${root.absolutePath}" + if (scanning) " · 扫描中…" else "")
             }
             TextButton(text = "刷新", onClick = { reload++ })
         }
@@ -308,7 +332,7 @@ private fun DesktopGallery(root: File, onMessage: (String) -> Unit) {
                             .padding(8.dp),
                     ) {
                         Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-                            val bitmap = remember(item.file.path) { if (item.isVideo) null else loadThumb(item.file) }
+                            val bitmap = thumbCache[item.file.path]
                             if (bitmap != null) {
                                 Image(
                                     bitmap = bitmap,
