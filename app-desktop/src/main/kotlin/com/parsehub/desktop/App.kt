@@ -255,7 +255,7 @@ private fun DesktopGallery(
     var reload by remember { mutableStateOf(0) }
     var newestFirst by remember { mutableStateOf(true) }
     var columns by remember { mutableStateOf(4) }
-    var subFolder by remember { mutableStateOf("") }
+    var stack by remember { mutableStateOf<List<String>>(emptyList()) }
     var scanning by remember { mutableStateOf(false) }
 
     LaunchedEffect(root, reload) {
@@ -276,13 +276,27 @@ private fun DesktopGallery(
         thumbCache.putAll(decoded)
     }
 
-    val subFolders = remember(files, root) {
-        files.map { relFolder(root, it.file) }.filter { it.isNotEmpty() }.distinct().sorted()
+    val prefix = if (stack.isEmpty()) root.absolutePath else stack.fold(root.absolutePath) { acc, s -> "$acc/$s" }
+
+    // 当前层级的子文件夹（名称 -> 项数），文件夹与本层文件分区展示
+    val childFolders = remember(files, prefix) {
+        val map = LinkedHashMap<String, Int>()
+        files.forEach { f ->
+            val parent = f.file.parentFile?.absolutePath ?: return@forEach
+            if (!parent.startsWith(prefix)) return@forEach
+            val rest = parent.removePrefix(prefix).trim('/', '\\')
+            if (rest.isEmpty()) return@forEach
+            val seg = rest.substringBefore('/')
+            map[seg] = (map[seg] ?: 0) + 1
+        }
+        map.toList().sortedBy { it.first }.toMap()
     }
-    val shown = remember(files, subFolder, newestFirst) {
-        val base = if (subFolder.isEmpty()) files else files.filter { relFolder(root, it.file) == subFolder }
-        if (newestFirst) base.sortedByDescending { it.file.lastModified() }
-        else base.sortedBy { it.file.name.lowercase() }
+    val levelFiles = remember(files, prefix) {
+        files.filter { (it.file.parentFile?.absolutePath ?: "") == prefix }
+    }
+    val shown = remember(levelFiles, newestFirst) {
+        if (newestFirst) levelFiles.sortedByDescending { it.file.lastModified() }
+        else levelFiles.sortedBy { it.file.name.lowercase() }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
@@ -292,22 +306,56 @@ private fun DesktopGallery(
             }
             TextButton(text = "刷新", onClick = { reload++ })
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(
-                text = "范围：" + if (subFolder.isEmpty()) "全部" else subFolder,
-                onClick = {
-                    if (subFolders.isEmpty()) return@TextButton
-                    val i = subFolders.indexOf(subFolder)
-                    subFolder = if (i >= subFolders.lastIndex) "" else subFolders[i + 1]
-                },
-            )
-            TextButton(text = "排序：" + if (newestFirst) "最新" else "名称", onClick = { newestFirst = !newestFirst })
-            TextButton(text = "列数：$columns", onClick = { columns = if (columns >= 6) 2 else columns + 1 })
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (stack.isNotEmpty()) {
+                TextButton(text = "‹ 上一级", onClick = { stack = stack.dropLast(1) })
+            }
+            TextButton(text = "全部", onClick = { stack = emptyList() })
+            stack.forEachIndexed { i, seg ->
+                Text("/", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                TextButton(text = seg, onClick = { stack = stack.take(i + 1) })
+            }
         }
-        if (files.isEmpty()) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(text = "排序：" + if (newestFirst) "最新" else "名称", onClick = { newestFirst = !newestFirst })
+            Text(
+                "列数",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            listOf(2, 3, 4, 5, 6).forEach { n ->
+                if (n == columns) Button(onClick = { columns = n }) { Text("$n", style = MiuixTheme.textStyles.button) }
+                else TextButton(text = "$n", onClick = { columns = n })
+            }
+        }
+        if (childFolders.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "文件夹",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+                childFolders.forEach { (name, count) ->
+                    TextButton(text = "📁 $name ($count)", onClick = { stack = stack + name })
+                }
+            }
+        }
+        if (childFolders.isEmpty() && shown.isEmpty()) {
             Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(20.dp)) {
                 Text(
-                    "保存目录里还没有内容",
+                    "这个位置还没有内容",
                     style = MiuixTheme.textStyles.body2,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
@@ -385,6 +433,12 @@ private fun relFolder(root: File, file: File): String {
     val rel = file.parentFile?.absolutePath?.removePrefix(root.absolutePath) ?: return ""
     val parts = rel.split('/', '\\').filter { it.isNotEmpty() }
     return parts.lastOrNull() ?: ""
+}
+
+/** 相对根目录的完整目录路径（用于层级浏览判断） */
+private fun relPath(root: File, file: File): String {
+    val rel = file.parentFile?.absolutePath?.removePrefix(root.absolutePath) ?: return ""
+    return rel.trim('/', '\\')
 }
 
 private fun loadThumb(file: File, max: Int = 320) = try {
