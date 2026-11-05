@@ -1,6 +1,6 @@
 package com.parsehub.parsers
 
-import com.parsehub.core.ImageItem
+import com.parsehub.core.*
 import com.parsehub.core.ParseOptions
 import com.parsehub.core.ParseResult
 import com.parsehub.core.Platform
