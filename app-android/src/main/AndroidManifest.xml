@@ -52,6 +52,7 @@
                 <data android:scheme="https" android:host="www.douban.com" />
                 <data android:scheme="https" android:host="m.douban.com" />
                 <data android:scheme="https" android:host="douc.cc" />
+                <data android:scheme="https" android:host="www.coolapk.com" />
             </intent-filter>
         </activity>
     </application>

@@ -11,7 +11,8 @@ enum class Platform(val key: String, val label: String, val dirPrefix: String, v
     PIPIXIA("pipixia", "皮皮虾", "皮皮虾", "https://h5.pipix.com/"),
     ZUIYOU("zuiyou", "最右", "最右", "https://share.xiaochuankeji.cn/"),
     XHS("xhs", "小红书", "小红书", "https://www.xiaohongshu.com/"),
-    DOUBAN("douban", "豆瓣", "豆瓣", "https://www.douban.com/");
+    DOUBAN("douban", "豆瓣", "豆瓣", "https://www.douban.com/"),
+    COOLAPK("coolapk", "酷安", "酷安", "https://www.coolapk.com/");
 
     companion object {
         fun ofKey(key: String): Platform? = entries.firstOrNull { it.key == key }
@@ -29,6 +30,7 @@ enum class Platform(val key: String, val label: String, val dirPrefix: String, v
                 "izuiyou" in t || "xiaochuankeji" in t -> ZUIYOU
                 "xiaohongshu" in t || "xhslink" in t -> XHS
                 "douban.com" in t || "douc.cc" in t -> DOUBAN
+                "coolapk.com" in t -> COOLAPK
                 else -> null
             }
         }
