@@ -308,7 +308,11 @@ internal fun StudioGallery(
                     }
                 }
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { HairLine() }
-                items(shown, key = { it.absolutePath }) { file ->
+                items(
+                    count = shown.size,
+                    key = { shown[it].absolutePath },
+                ) { i ->
+                    val file = shown[i]
                     val isVideo = file.extension.lowercase() in VIDEO_EXT
                     val bitmap = thumbCache[file.path]
                     MediaTile(file, bitmap, isVideo, prefs.view == "list", prefs.fit == "cover") {
@@ -528,8 +532,8 @@ private fun LightboxWindow(
                                     offsetX = 0f
                                     offsetY = 0f
                                 })
-                            }
-                                        contentAlignment = Alignment.Center,
+                            },
+                        contentAlignment = Alignment.Center,
                     ) {
                         if (isVideo) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {

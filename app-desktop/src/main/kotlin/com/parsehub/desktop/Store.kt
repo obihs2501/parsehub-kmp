@@ -37,7 +37,7 @@ class DesktopStore(home: File = File(System.getProperty("user.home"))) {
 
     fun saveOutDir(dir: String) {
         try {
-            dir.mkdirs()
+            File(dir).mkdirs()
             this.dir.mkdirs()
             settingsFile.writeText(dir)
         } catch (_: Exception) {

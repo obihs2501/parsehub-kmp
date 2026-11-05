@@ -213,15 +213,17 @@ fun App(sharedText: MutableState<String>) {
                                 contentAlignment = Alignment.BottomCenter,
                             ) {
                                 Box(
-                                    Modifier
-                                        .fillMaxWidth(0.86f)
-                                        .then(
-                                            if (glass) Modifier.textureBlur(
+                                    if (glass) {
+                                        Modifier
+                                            .fillMaxWidth(0.86f)
+                                            .textureBlur(
                                                 backdrop = backdrop,
                                                 shape = RoundedCornerShape(50),
                                                 blurRadius = 22f,
-                                            ) else Modifier,
-                                        ),
+                                            )
+                                    } else {
+                                        Modifier.fillMaxWidth(0.86f)
+                                    },
                                 ) {
                                     FloatingNavigationBar(
                                         modifier = Modifier.fillMaxWidth(),
