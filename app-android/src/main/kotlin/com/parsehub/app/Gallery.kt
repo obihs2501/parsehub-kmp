@@ -132,6 +132,7 @@ internal fun GalleryScreen(
     var filter by remember { mutableStateOf(MediaFilter.ALL) }
     var sort by remember { mutableStateOf(SortMode.NEWEST) }
     var columns by remember { mutableStateOf(3) }
+    var visibleCount by remember { mutableStateOf(90) }
     var query by remember { mutableStateOf("") }
     var viewerAt by remember { mutableStateOf<Int?>(null) }
     var selecting by remember { mutableStateOf(false) }
@@ -225,10 +226,13 @@ internal fun GalleryScreen(
         when (sort) {
             SortMode.NEWEST -> list.sortedByDescending { it.added }
             SortMode.OLDEST -> list.sortedBy { it.added }
-            SortMode.NAME -> list.sortedBy { it.name.lowercase() }
+            SortMode.NAME -> list.sortedWith { a, b -> naturalCompare(a.name, b.name) }
             SortMode.SIZE -> list.sortedByDescending { it.size }
         }
     }
+
+    // 换目录 / 改搜索 / 换排序时回到第一批
+    LaunchedEffect(prefix, query, sort, filter) { visibleCount = 90 }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -386,9 +390,21 @@ internal fun GalleryScreen(
                 }
                 if (shown.isNotEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        SmallTitle(text = if (searching) "搜索结果" else "文件")
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            SmallTitle(text = if (searching) "搜索结果" else "文件")
+                            Spacer(Modifier.weight(1f))
+                            if (shown.size > visibleCount) {
+                                TextButton(
+                                    text = "加载更多（剩 ${shown.size - visibleCount}）",
+                                    onClick = { visibleCount += 90 },
+                                )
+                            }
+                        }
                     }
-                    items(shown, key = { it.uri.toString() }) { item ->
+                    items(shown.take(visibleCount), key = { it.uri.toString() }) { item ->
                         val index = shown.indexOf(item)
                         var appeared by remember(item.uri) { mutableStateOf(false) }
                         LaunchedEffect(item.uri) { appeared = true }
@@ -631,7 +647,7 @@ private fun ViewerOverlay(
                     Text(current.name, style = MiuixTheme.textStyles.body2)
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        Fmt.size(current.size) + " · " + dateTime(current.added) +
+                        Fmt.size(current.size) + " · " + relativeDate(current.added) +
                             if (current.width > 0) " · ${current.width}×${current.height}" else "",
                         style = MiuixTheme.textStyles.footnote2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -871,4 +887,47 @@ private fun deleteMedia(ctx: Context, item: MediaItem): Boolean = try {
     ctx.contentResolver.delete(item.uri, null, null) > 0
 } catch (_: Exception) {
     false
+}
+
+/** 数字感知排序：img2 排在 img10 前面 */
+private fun naturalCompare(a: String, b: String): Int {
+    var i = 0
+    var j = 0
+    while (i < a.length && j < b.length) {
+        val ca = a[i]
+        val cb = b[j]
+        if (ca.isDigit() && cb.isDigit()) {
+            var x = 0L
+            while (i < a.length && a[i].isDigit()) {
+                x = x * 10 + (a[i] - '0')
+                i++
+            }
+            var y = 0L
+            while (j < b.length && b[j].isDigit()) {
+                y = y * 10 + (b[j] - '0')
+                j++
+            }
+            if (x != y) return if (x < y) -1 else 1
+        } else {
+            val la = ca.lowercaseChar()
+            val lb = cb.lowercaseChar()
+            if (la != lb) return if (la < lb) -1 else 1
+            i++
+            j++
+        }
+    }
+    return (a.length - i).compareTo(b.length - j)
+}
+
+/** 相对时间：今天显示 HH:mm，今年显示 MM-DD，更早显示 yyyy-MM-dd */
+private fun relativeDate(ts: Long): String {
+    val full = dateTime(ts)
+    if (full.isEmpty()) return ""
+    val day = full.substring(0, 10)
+    val today = com.parsehub.core.today()
+    return when {
+        day == today -> "今天 " + full.substringAfter(' ', "")
+        day.startsWith(today.substring(0, 4)) -> full.substring(5)
+        else -> day
+    }
 }
