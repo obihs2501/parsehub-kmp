@@ -33,12 +33,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -74,6 +78,7 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
+import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
@@ -101,8 +106,9 @@ private enum class SortMode(val label: String) {
 }
 
 /**
- * 本地图库：搜索 / 文件夹筛选 / 类型 / 排序 / 列数（折叠面板）+ 全屏查看
- * （左右滑、缩放、视频内嵌播放、查看时隐藏底栏）+ 长按多选批量分享与删除。
+ * 本地图库（目录层级浏览）：
+ * 先看文件夹，逐级进入，文件夹与本层文件分区展示；支持搜索（跨整棵树）、类型/排序/列数、
+ * 长按多选批量分享与删除，以及全屏查看（左右滑、缩放、视频内嵌播放、看图时隐藏底栏）。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -116,13 +122,12 @@ internal fun GalleryScreen(
     var denied by remember { mutableStateOf(false) }
     var reload by remember { mutableStateOf(0) }
 
-    var folder by remember { mutableStateOf("") }
+    var stack by remember { mutableStateOf<List<String>>(emptyList()) }
     var filter by remember { mutableStateOf(MediaFilter.ALL) }
     var sort by remember { mutableStateOf(SortMode.NEWEST) }
     var columns by remember { mutableStateOf(3) }
     var query by remember { mutableStateOf("") }
     var viewerAt by remember { mutableStateOf<Int?>(null) }
-    var showFolders by remember { mutableStateOf(false) }
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var confirmBatch by remember { mutableStateOf(false) }
@@ -140,18 +145,36 @@ internal fun GalleryScreen(
         val res = withContext(Dispatchers.IO) { runCatching { queryMedia(ctx) } }
         all = res.getOrDefault(emptyList())
         denied = res.isFailure
-        if (folder.isNotEmpty() && all.none { it.bucket == folder }) folder = ""
         loading = false
     }
 
-    val folders = remember(all) { all.map { it.bucket }.distinct().sorted() }
+    val prefix = if (stack.isEmpty()) "" else stack.joinToString("/") + "/"
+    val searching = query.isNotBlank()
 
-    val shown = remember(all, folder, filter, sort, query) {
-        var list = all
-        if (folder.isNotEmpty()) list = list.filter { it.bucket == folder }
-        if (query.isNotBlank()) {
+    // 当前层级的子文件夹（名称 -> 项数）
+    val childFolders = remember(all, prefix, searching) {
+        if (searching) return@remember emptyMap<String, Int>()
+        val map = LinkedHashMap<String, Int>()
+        for (m in all) {
+            if (!m.bucket.startsWith(prefix)) continue
+            val rest = m.bucket.substring(prefix.length).trim('/')
+            if (rest.isEmpty()) continue
+            val seg = rest.substringBefore('/')
+            map[seg] = (map[seg] ?: 0) + 1
+        }
+        map.toList().sortedBy { it.first }.toMap()
+    }
+
+    val levelFiles = remember(all, prefix) {
+        all.filter { it.bucket.trim('/') + "/" == prefix }
+    }
+
+    val shown = remember(all, levelFiles, filter, sort, query, stack) {
+        var list = if (query.isNotBlank()) {
             val q = query.trim().lowercase()
-            list = list.filter { it.name.lowercase().contains(q) }
+            all.filter { it.name.lowercase().contains(q) }
+        } else {
+            levelFiles
         }
         list = when (filter) {
             MediaFilter.ALL -> list
@@ -169,14 +192,40 @@ internal fun GalleryScreen(
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
-                PageHero("本地图库", "${shown.size} 项 · ${if (folder.isEmpty()) "全部文件夹" else folderLabel(folder)}")
+                PageHero(
+                    "本地图库",
+                    if (searching) {
+                        "搜索「${query.trim()}」· ${shown.size} 项"
+                    } else {
+                        "${childFolders.size} 个文件夹 · ${levelFiles.size} 个文件 · " + crumbLabel(stack)
+                    },
+                )
             }
             TextButton(text = "刷新", onClick = { reload++ })
         }
 
-        // 折叠的筛选面板（默认展开，带展开/收起动画）
+        // 面包屑：点任意一级回跳
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (stack.isNotEmpty()) {
+                TextButton(text = "‹ 上一级", onClick = { stack = stack.dropLast(1) })
+            }
+            TextButton(text = "全部", onClick = { stack = emptyList() })
+            stack.forEachIndexed { i, seg ->
+                Text(
+                    "/",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+                TextButton(text = seg, onClick = { stack = stack.take(i + 1) })
+            }
+        }
+
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            SmallTitle(text = "筛选与排序")
+            SmallTitle(text = "搜索与筛选")
             Spacer(Modifier.weight(1f))
             TextButton(text = if (panelOpen) "收起" else "展开", onClick = { panelOpen = !panelOpen })
         }
@@ -185,7 +234,7 @@ internal fun GalleryScreen(
                 TextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = "搜索文件名",
+                    label = "搜索文件名（跨所有文件夹）",
                     useLabelAsPlaceholder = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -194,10 +243,6 @@ internal fun GalleryScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(
-                        text = if (folder.isEmpty()) "文件夹：全部" else "文件夹：${folderLabel(folder)}",
-                        onClick = { showFolders = true },
-                    )
                     MediaFilter.entries.forEach { f ->
                         if (f == filter) Button(onClick = { filter = f }) { Text(f.label, style = MiuixTheme.textStyles.button) }
                         else TextButton(text = f.label, onClick = { filter = f })
@@ -274,8 +319,8 @@ internal fun GalleryScreen(
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
-        } else if (shown.isEmpty()) {
-            EmptyHint("这里还没有媒体文件")
+        } else if (childFolders.isEmpty() && shown.isEmpty()) {
+            EmptyHint(if (searching) "没有匹配的文件" else "这个文件夹是空的")
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
@@ -284,56 +329,83 @@ internal fun GalleryScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                items(shown) { item ->
-                    val index = shown.indexOf(item)
-                    var appeared by remember(item.uri) { mutableStateOf(false) }
-                    LaunchedEffect(item.uri) { appeared = true }
-                    AnimatedVisibility(
-                        visible = appeared,
-                        enter = fadeIn(animationSpec = tween(200)) + scaleIn(initialScale = 0.92f, animationSpec = tween(200)),
-                        exit = fadeOut(animationSpec = tween(120)),
-                    ) {
-                        Box(
-                            Modifier
-                                .aspectRatio(1f)
-                                .background(MiuixTheme.colorScheme.surface)
-                                .combinedClickable(
-                                    onClick = {
-                                        val key = item.uri.toString()
-                                        if (selecting) {
-                                            selected = if (selected.contains(key)) selected - key else selected + key
-                                        } else {
-                                            viewerAt = index
-                                        }
-                                    },
-                                    onLongClick = {
-                                        selecting = true
-                                        selected = selected + item.uri.toString()
-                                    },
-                                ),
-                        ) {
-                            AsyncImage(
-                                model = item.uri,
-                                contentDescription = item.name,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                            if (item.isVideo) {
-                                Text(
-                                    "▶ " + Fmt.dur(item.durationMs / 1000.0),
-                                    style = MiuixTheme.textStyles.footnote2,
-                                    color = Color.White,
-                                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
-                                )
+                if (childFolders.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        SmallTitle(text = "文件夹")
+                    }
+                    for ((name, count) in childFolders) {
+                        item(key = "dir:$name") {
+                            FolderCard(name = name, count = count) {
+                                stack = stack + name
+                                selected = emptySet()
+                                selecting = false
                             }
-                            if (selected.contains(item.uri.toString())) {
-                                Box(
-                                    Modifier
-                                        .fillMaxSize()
-                                        .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.30f)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text("✓", style = MiuixTheme.textStyles.title1, color = Color.White)
+                        }
+                    }
+                }
+                if (shown.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        SmallTitle(text = if (searching) "搜索结果" else "文件")
+                    }
+                    items(shown, key = { it.uri.toString() }) { item ->
+                        val index = shown.indexOf(item)
+                        var appeared by remember(item.uri) { mutableStateOf(false) }
+                        LaunchedEffect(item.uri) { appeared = true }
+                        AnimatedVisibility(
+                            visible = appeared,
+                            enter = fadeIn(animationSpec = tween(200)) + scaleIn(initialScale = 0.92f, animationSpec = tween(200)),
+                            exit = fadeOut(animationSpec = tween(120)),
+                        ) {
+                            Box(
+                                Modifier
+                                    .aspectRatio(1f)
+                                    .background(MiuixTheme.colorScheme.surface)
+                                    .combinedClickable(
+                                        onClick = {
+                                            val key = item.uri.toString()
+                                            if (selecting) {
+                                                selected = if (selected.contains(key)) selected - key else selected + key
+                                            } else {
+                                                viewerAt = index
+                                            }
+                                        },
+                                        onLongClick = {
+                                            selecting = true
+                                            selected = selected + item.uri.toString()
+                                        },
+                                    ),
+                            ) {
+                                AsyncImage(
+                                    model = item.uri,
+                                    contentDescription = item.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                if (item.isVideo) {
+                                    Text(
+                                        "▶ " + Fmt.dur(item.durationMs / 1000.0),
+                                        style = MiuixTheme.textStyles.footnote2,
+                                        color = Color.White,
+                                        modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
+                                    )
+                                }
+                                if (searching) {
+                                    Text(
+                                        folderLabel(item.bucket),
+                                        style = MiuixTheme.textStyles.footnote2,
+                                        color = Color.White,
+                                        modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
+                                    )
+                                }
+                                if (selected.contains(item.uri.toString())) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxSize()
+                                            .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.30f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text("✓", style = MiuixTheme.textStyles.title1, color = Color.White)
+                                    }
                                 }
                             }
                         }
@@ -342,36 +414,6 @@ internal fun GalleryScreen(
             }
         }
         Spacer(Modifier.height(8.dp))
-    }
-
-    if (showFolders) {
-        OverlayDialog(title = "选择文件夹", show = showFolders, onDismissRequest = { showFolders = false }) {
-            Column(Modifier.fillMaxWidth().padding(8.dp)) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("全部文件夹", style = MiuixTheme.textStyles.main, modifier = Modifier.weight(1f))
-                    TextButton(text = if (folder.isEmpty()) "已选" else "选择", onClick = {
-                        folder = ""
-                        showFolders = false
-                    })
-                }
-                folders.forEach { f ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(folderLabel(f), style = MiuixTheme.textStyles.main)
-                            Text(
-                                "${all.count { it.bucket == f }} 项",
-                                style = MiuixTheme.textStyles.footnote2,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        }
-                        TextButton(text = if (folder == f) "已选" else "选择", onClick = {
-                            folder = f
-                            showFolders = false
-                        })
-                    }
-                }
-            }
-        }
     }
 
     if (confirmBatch) {
@@ -415,6 +457,34 @@ internal fun GalleryScreen(
     }
 }
 
+/** 文件夹卡片：名称 + 项数，点击进入下一级 */
+@Composable
+private fun FolderCard(name: String, count: Int, onOpen: () -> Unit) {
+    Column(
+        Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MiuixTheme.colorScheme.surface)
+            .clickable { onOpen() }
+            .padding(8.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(MiuixIcons.Regular.Folder, contentDescription = null)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            name,
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+        )
+        Text(
+            "$count 项",
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+    }
+}
+
 @Composable
 private fun ViewerOverlay(
     ctx: Context,
@@ -430,7 +500,6 @@ private fun ViewerOverlay(
     var confirmDelete by remember { mutableStateOf(false) }
     var current by remember { mutableStateOf(items.getOrNull(startIndex) ?: items.first()) }
 
-    // 进入看图时隐藏底栏与顶栏，退出时恢复
     DisposableEffect(Unit) {
         onImmersive(true)
         onDispose { onImmersive(false) }
@@ -445,7 +514,6 @@ private fun ViewerOverlay(
             if (item.isVideo) VideoBody(item) else ZoomableImage(item)
         }
 
-        // 顶栏用 Card 承载，保证图标在纯黑背景上清晰可见
         Card(
             Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter),
             insideMargin = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
@@ -673,6 +741,9 @@ private fun folderLabel(rel: String): String {
     val parts = rel.trim('/').split('/').filter { it.isNotEmpty() }
     return parts.lastOrNull() ?: rel
 }
+
+private fun crumbLabel(stack: List<String>): String =
+    if (stack.isEmpty()) "全部位置" else stack.joinToString(" / ")
 
 private fun shareMedia(ctx: Context, item: MediaItem) {
     try {
