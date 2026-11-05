@@ -43,6 +43,8 @@ data class AppConfig(
     val gallerySort: String = "newest",
     val galleryFilter: String = "all",
     val galleryOpenPanel: Boolean = false,
+    /** 底栏样式：classic = 贴底，floating = 悬浮胶囊，glass = 悬浮 + 液态玻璃模糊 */
+    val navStyle: String = "classic",
 ) {
     /** 取出该平台当前应使用的 Cookie（轮换） */
     fun cookieFor(platformKey: String, turn: Int): String {

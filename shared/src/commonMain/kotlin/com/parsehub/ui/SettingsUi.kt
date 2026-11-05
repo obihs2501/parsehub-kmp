@@ -380,6 +380,16 @@ fun AppearanceSettings(config: AppConfig, onConfig: (AppConfig) -> Unit) {
                 RadioButtonPreference(title = label, selected = config.theme == v, onClick = { onConfig(config.copy(theme = v)) })
             }
         }
+        SectionLabel("底栏样式（Android）")
+        Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(horizontal = 16.dp)) {
+            listOf(
+                "classic" to "贴底导航（默认）",
+                "floating" to "悬浮胶囊导航",
+                "glass" to "悬浮 + 液态玻璃",
+            ).forEach { (v, label) ->
+                RadioButtonPreference(title = label, selected = config.navStyle == v, onClick = { onConfig(config.copy(navStyle = v)) })
+            }
+        }
         SectionLabel("解析后默认选中")
         Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(horizontal = 16.dp)) {
             listOf(

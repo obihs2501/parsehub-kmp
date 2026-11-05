@@ -6,27 +6,19 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,7 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.parsehub.HubController
 import com.parsehub.core.AppConfig
@@ -54,18 +45,14 @@ import com.parsehub.ui.CookieSettings
 import com.parsehub.ui.DownloadSettings
 import com.parsehub.ui.HistoryScreen
 import com.parsehub.ui.NamingSettings
-import com.parsehub.ui.PageHero
 import com.parsehub.ui.PageSpring
 import com.parsehub.ui.ParseScreen
 import com.parsehub.ui.Reveal
 import com.parsehub.ui.SettingsHome
 import com.parsehub.ui.SettingsPage
 import com.parsehub.ui.TasksScreen
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import okio.Path.Companion.toPath
-import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -86,12 +73,12 @@ private enum class Tab(val title: String) {
     SETTINGS("设置"),
 }
 
-private data class LocalFile(val file: File, val isVideo: Boolean)
+internal data class LocalFile(val file: File, val isVideo: Boolean)
 
 @Composable
 fun DesktopApp() {
     val store = remember { DesktopStore() }
-    var outDir by remember { mutableStateOf(store.defaultOutDir()) }
+    var outDir by remember { mutableStateOf(store.loadOutDir()) }
     val tempDir = remember {
         File(System.getProperty("java.io.tmpdir"), "parsehub_dl").apply { mkdirs() }.absolutePath.toPath()
     }
@@ -118,6 +105,11 @@ fun DesktopApp() {
         controller.updateConfig(next)
     }
 
+    fun setOutDir(dir: String) {
+        outDir = dir
+        store.saveOutDir(dir)
+    }
+
     LaunchedEffect(toast) {
         if (toast.isNotEmpty()) {
             kotlinx.coroutines.delay(2600)
@@ -131,7 +123,7 @@ fun DesktopApp() {
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 OutDirBar(
                     outDir = outDir,
-                    onPick = { pickFolder(outDir)?.let { outDir = it } },
+                    onPick = { pickFolder(outDir)?.let { setOutDir(it) } },
                     onOpen = { openInFileManager(outDir) },
                 )
                 AnimatedContent(
@@ -153,14 +145,15 @@ fun DesktopApp() {
                                 config = config,
                                 onConfig = { applyConfig(it) },
                                 rootLabel = File(outDir).absolutePath,
-                                onPickFolder = { pickFolder(outDir)?.let { picked -> outDir = picked } },
+                                onPickFolder = { pickFolder(outDir)?.let { picked -> setOutDir(picked) } },
                             )
                             SettingsPage.ABOUT -> AboutSettings { url -> openUrl(url) }
                         }
                         key == Tab.PARSE.name -> ParseScreen(controller, readClipboard = ::readClipboard)
                         key == Tab.TASKS.name -> TasksScreen(controller)
-                        key == Tab.GALLERY.name -> DesktopGallery(
+                        key == Tab.GALLERY.name -> StudioGallery(
                             root = File(outDir),
+                            store = store,
                             thumbCache = thumbCache,
                             onMessage = { toast = it },
                         )
@@ -252,175 +245,11 @@ private fun OutDirBar(outDir: String, onPick: () -> Unit, onOpen: () -> Unit) {
     }
 }
 
-@Composable
-private fun DesktopGallery(
-    root: File,
-    thumbCache: MutableMap<String, ImageBitmap>,
-    onMessage: (String) -> Unit,
-) {
-    var files by remember { mutableStateOf<List<LocalFile>>(emptyList()) }
-    var reload by remember { mutableStateOf(0) }
-    var newestFirst by remember { mutableStateOf(true) }
-    var columns by remember { mutableStateOf(4) }
-    var stack by remember { mutableStateOf<List<String>>(emptyList()) }
-    var scanning by remember { mutableStateOf(false) }
-
-    LaunchedEffect(root, reload) {
-        scanning = true
-        files = withContext(Dispatchers.IO) { scanLocal(root) }
-        scanning = false
-    }
-
-    // 缩略图在后台解码，解完再整体写入缓存（组合期不再做磁盘/解码工作）
-    LaunchedEffect(files) {
-        val missing = files.filter { !it.isVideo && !thumbCache.containsKey(it.file.path) }.take(300)
-        if (missing.isEmpty()) return@LaunchedEffect
-        val decoded = withContext(Dispatchers.IO) {
-            buildMap {
-                missing.forEach { f -> loadThumb(f.file)?.let { put(f.file.path, it) } }
-            }
-        }
-        thumbCache.putAll(decoded)
-    }
-
-    val prefix = if (stack.isEmpty()) root.absolutePath else stack.fold(root.absolutePath) { acc, s -> "$acc/$s" }
-
-    // 当前层级的子文件夹（名称 -> 项数），文件夹与本层文件分区展示
-    val childFolders = remember(files, prefix) {
-        val map = LinkedHashMap<String, Int>()
-        files.forEach { f ->
-            val parent = f.file.parentFile?.absolutePath ?: return@forEach
-            if (!parent.startsWith(prefix)) return@forEach
-            val rest = parent.removePrefix(prefix).trim('/', '\\')
-            if (rest.isEmpty()) return@forEach
-            val seg = rest.substringBefore('/')
-            map[seg] = (map[seg] ?: 0) + 1
-        }
-        map.toList().sortedBy { it.first }.toMap()
-    }
-    val levelFiles = remember(files, prefix) {
-        files.filter { (it.file.parentFile?.absolutePath ?: "") == prefix }
-    }
-    val shown = remember(levelFiles, newestFirst) {
-        if (newestFirst) levelFiles.sortedByDescending { it.file.lastModified() }
-        else levelFiles.sortedBy { it.file.name.lowercase() }
-    }
-
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) {
-                PageHero("本地图库", "${shown.size} 项 · ${root.absolutePath}" + if (scanning) " · 扫描中…" else "")
-            }
-            TextButton(text = "刷新", onClick = { reload++ })
-        }
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (stack.isNotEmpty()) {
-                TextButton(text = "‹ 上一级", onClick = { stack = stack.dropLast(1) })
-            }
-            TextButton(text = "全部", onClick = { stack = emptyList() })
-            stack.forEachIndexed { i, seg ->
-                Text("/", style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-                TextButton(text = seg, onClick = { stack = stack.take(i + 1) })
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(text = "排序：" + if (newestFirst) "最新" else "名称", onClick = { newestFirst = !newestFirst })
-            Text(
-                "列数",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-            listOf(2, 3, 4, 5, 6).forEach { n ->
-                if (n == columns) Button(onClick = { columns = n }) { Text("$n", style = MiuixTheme.textStyles.button) }
-                else TextButton(text = "$n", onClick = { columns = n })
-            }
-        }
-        if (childFolders.isNotEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "文件夹",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-                childFolders.forEach { (name, count) ->
-                    TextButton(text = "📁 $name ($count)", onClick = { stack = stack + name })
-                }
-            }
-        }
-        if (childFolders.isEmpty() && shown.isEmpty()) {
-            Card(Modifier.fillMaxWidth(), insideMargin = PaddingValues(20.dp)) {
-                Text(
-                    "这个位置还没有内容",
-                    style = MiuixTheme.textStyles.body2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 24.dp),
-            ) {
-                items(shown) { item ->
-                    Column(
-                        Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MiuixTheme.colorScheme.surface)
-                            .clickable {
-                                onMessage("正在打开 ${item.file.name}")
-                                openFile(item.file)
-                            }
-                            .padding(8.dp),
-                    ) {
-                        Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-                            val bitmap = thumbCache[item.file.path]
-                            if (bitmap != null) {
-                                Image(
-                                    bitmap = bitmap,
-                                    contentDescription = item.file.name,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                Text(
-                                    if (item.isVideo) "视频" else "图片",
-                                    style = MiuixTheme.textStyles.footnote2,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            item.file.name,
-                            style = MiuixTheme.textStyles.footnote2,
-                            color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------- 平台工具
-private val IMAGE_EXT = setOf("jpg", "jpeg", "png", "webp", "heic", "gif", "bmp")
-private val VIDEO_EXT = setOf("mp4", "mov", "mkv", "webm", "avi", "ts", "m4v")
+internal val IMAGE_EXT = setOf("jpg", "jpeg", "png", "webp", "heic", "gif", "bmp")
+internal val VIDEO_EXT = setOf("mp4", "mov", "mkv", "webm", "avi", "ts", "m4v")
 
-private fun scanLocal(root: File): List<LocalFile> {
+internal fun scanLocal(root: File): List<LocalFile> {
     if (!root.isDirectory) return emptyList()
     val out = mutableListOf<LocalFile>()
     root.walkTopDown().maxDepth(3).forEach { f ->
@@ -448,7 +277,7 @@ private fun relPath(root: File, file: File): String {
     return rel.trim('/', '\\')
 }
 
-private fun loadThumb(file: File, max: Int = 320) = try {
+internal fun loadThumb(file: File, max: Int = 320) = try {
     val img = ImageIO.read(file) ?: return null
     val scale = max.toDouble() / maxOf(img.width, img.height).coerceAtLeast(1)
     val w = (img.width * scale).toInt().coerceAtLeast(1)
@@ -480,7 +309,7 @@ private fun openInFileManager(path: String) {
     }
 }
 
-private fun openFile(file: File) {
+internal fun openFile(file: File) {
     try {
         Desktop.getDesktop().open(file)
     } catch (_: Exception) {

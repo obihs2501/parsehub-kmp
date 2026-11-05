@@ -107,6 +107,18 @@ import me.saket.telephoto.zoomable.EnabledZoomGestures
 import me.saket.telephoto.zoomable.ZoomSpec
 import me.saket.telephoto.zoomable.rememberZoomableState
 import me.saket.telephoto.zoomable.zoomable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.coerceAtLeast
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import coil3.request.ImageRequest
+import androidx.compose.animation.scaleOut
 
 internal data class MediaItem(
     val uri: Uri,
@@ -262,9 +274,25 @@ internal fun GalleryScreen(
     // 换目录 / 改搜索 / 换排序时回到第一批
     LaunchedEffect(prefix, query, sort, filter) { visibleCount = 90 }
 
+    // 滚动时标题区随内容向上收起：只保留一行小标题，不再固定占半屏
+    var scrollY by remember { mutableFloatStateOf(0f) }
+    val heroCollapse by animateFloatAsState(
+        targetValue = if (scrollY > 24f) 1f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "heroCollapse",
+    )
+
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .graphicsLayer {
+                        alpha = 1f - heroCollapse * 0.85f
+                        translationY = -heroCollapse * 28f
+                    }
+                    .height((76 * (1f - heroCollapse * 0.82f)).dp.coerceAtLeast(0.dp)),
+            ) {
                 PageHero(
                     "本地图库",
                     if (searching) {
@@ -414,9 +442,23 @@ internal fun GalleryScreen(
         } else if (childFolders.isEmpty() && shown.isEmpty()) {
             EmptyHint(if (searching) "没有匹配的文件" else "这个文件夹是空的")
         } else {
+            val gridState = rememberLazyGridState()
+            LaunchedEffect(gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset) {
+                scrollY = gridState.firstVisibleItemIndex * 1000f + gridState.firstVisibleItemScrollOffset.toFloat()
+            }
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Fixed(columns),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(remember {
+                        object : NestedScrollConnection {
+                            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                                if (available.y != 0f) scrollY = (scrollY - available.y).coerceAtLeast(0f)
+                                return Offset.Zero
+                            }
+                        }
+                    }),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
@@ -452,16 +494,8 @@ internal fun GalleryScreen(
                             }
                         }
                     }
-                    items(shown.take(visibleCount), key = { it.uri.toString() }) { item ->
-                        val index = shown.indexOf(item)
-                        var appeared by remember(item.uri) { mutableStateOf(false) }
-                        LaunchedEffect(item.uri) { appeared = true }
-                        AnimatedVisibility(
-                            visible = appeared,
-                            enter = fadeIn(animationSpec = tween(200)) + scaleIn(initialScale = 0.92f, animationSpec = tween(200)),
-                            exit = fadeOut(animationSpec = tween(120)),
-                        ) {
-                            Box(
+                    itemsIndexed(shown.take(visibleCount), key = { _, item -> item.uri.toString() }) { index, item ->
+                        Box(
                                 Modifier
                                     .aspectRatio(1f)
                                     .background(MiuixTheme.colorScheme.surface)
@@ -503,7 +537,10 @@ internal fun GalleryScreen(
                                     }
                                 } else {
                                     AsyncImage(
-                                        model = item.uri,
+                                        model = ImageRequest.Builder(ctx)
+                                            .data(item.uri)
+                                            .size(360, 360)
+                                            .build(),
                                         contentDescription = item.name,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.fillMaxSize(),
@@ -536,7 +573,6 @@ internal fun GalleryScreen(
                                     }
                                 }
                             }
-                        }
                     }
                 }
             }
@@ -571,17 +607,25 @@ internal fun GalleryScreen(
         }
     }
 
-    val startIndex = viewerAt
-    if (startIndex != null && shown.isNotEmpty()) {
-        ViewerOverlay(
-            ctx = ctx,
-            items = shown,
-            startIndex = startIndex.coerceIn(0, shown.size - 1),
-            onClose = { viewerAt = null },
-            onMessage = onMessage,
-            onDeleted = { reload++ },
-            onImmersive = onImmersive,
-        )
+    // 看图层的进入/退出用淡入淡出 + 轻微缩放，和 Miuix 页面过渡保持连续
+    AnimatedVisibility(
+        visible = viewerAt != null && shown.isNotEmpty(),
+        enter = fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.96f, animationSpec = tween(260)),
+        exit = fadeOut(animationSpec = tween(200)) + scaleOut(targetScale = 0.96f, animationSpec = tween(200)),
+        label = "viewer",
+    ) {
+        val at = viewerAt
+        if (at != null && shown.isNotEmpty()) {
+            ViewerOverlay(
+                ctx = ctx,
+                items = shown,
+                startIndex = at.coerceIn(0, shown.size - 1),
+                onClose = { viewerAt = null },
+                onMessage = onMessage,
+                onDeleted = { reload++ },
+                onImmersive = onImmersive,
+            )
+        }
     }
 }
 

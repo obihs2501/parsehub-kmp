@@ -15,8 +15,10 @@ telephoto = "0.19.0"
 [libraries]
 telephoto-zoomable = { module = "me.saket.telephoto:zoomable", version.ref = "telephoto" }
 miuix-ui-android = { module = "top.yukonga.miuix.kmp:miuix-ui-android", version.ref = "miuix" }
+miuix-blur-android = { module = "top.yukonga.miuix.kmp:miuix-blur-android", version.ref = "miuix" }
 miuix-icons-android = { module = "top.yukonga.miuix.kmp:miuix-icons-android", version.ref = "miuix" }
 miuix-ui-desktop = { module = "top.yukonga.miuix.kmp:miuix-ui-desktop", version.ref = "miuix" }
+miuix-icons-desktop = { module = "top.yukonga.miuix.kmp:miuix-icons-desktop", version.ref = "miuix" }
 miuix-ui = { module = "top.yukonga.miuix.kmp:miuix-ui", version.ref = "miuix" }
 miuix-preference-android = { module = "top.yukonga.miuix.kmp:miuix-preference-android", version.ref = "miuix" }
 miuix-preference-desktop = { module = "top.yukonga.miuix.kmp:miuix-preference-desktop", version.ref = "miuix" }

@@ -14,6 +14,7 @@ dependencies {
     implementation(project(":shared"))
     implementation(compose.desktop.currentOs)
     implementation(libs.miuix.ui.desktop)
+    implementation(libs.miuix.icons.desktop)
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)

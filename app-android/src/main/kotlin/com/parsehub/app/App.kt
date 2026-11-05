@@ -78,6 +78,14 @@ import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
+import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
+import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 
 private enum class Tab(val title: String, val icon: ImageVector) {
     PARSE("解析", MiuixIcons.Regular.Link),
@@ -155,6 +163,14 @@ fun App(sharedText: MutableState<String>) {
 
     MiuixTheme(controller = themeController) {
         BackHandler(enabled = page != null) { page = null }
+        // 官方示例：layerBackdrop 捕获内容，textureBlur 在悬浮层上取模糊；
+        // onDraw 里先画不透明底色，避免透明像素扩散成色块
+        val bg = MiuixTheme.colorScheme.background
+        val backdrop = rememberLayerBackdrop {
+            drawRect(bg)
+            drawContent()
+        }
+        val glass = config.navStyle == "glass" && isRuntimeShaderSupported()
 
         Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
             Scaffold(
@@ -176,18 +192,51 @@ fun App(sharedText: MutableState<String>) {
                 },
                 bottomBar = {
                     if (!immersive) {
-                        Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
-                            NavigationBar {
-                                Tab.entries.forEach { t ->
-                                    NavigationBarItem(
-                                        selected = page == null && tab == t,
-                                        onClick = {
-                                            page = null
-                                            tab = t
-                                        },
-                                        icon = t.icon,
-                                        label = t.title,
-                                    )
+                        when (config.navStyle) {
+                            "classic" -> Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                                NavigationBar {
+                                    Tab.entries.forEach { t ->
+                                        NavigationBarItem(
+                                            selected = page == null && tab == t,
+                                            onClick = { page = null; tab = t },
+                                            icon = t.icon,
+                                            label = t.title,
+                                        )
+                                    }
+                                }
+                            }
+                            else -> Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .windowInsetsPadding(WindowInsets.navigationBars)
+                                    .padding(bottom = 14.dp),
+                                contentAlignment = Alignment.BottomCenter,
+                            ) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth(0.86f)
+                                        .then(
+                                            if (glass) Modifier.textureBlur(
+                                                backdrop = backdrop,
+                                                shape = RoundedCornerShape(50),
+                                                blurRadius = 22f,
+                                            ) else Modifier,
+                                        ),
+                                ) {
+                                    FloatingNavigationBar(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = if (glass) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
+                                        horizontalOutSidePadding = 0.dp,
+                                    ) {
+                                        Tab.entries.forEach { t ->
+                                            FloatingNavigationBarItem(
+                                                selected = page == null && tab == t,
+                                                onClick = { page = null; tab = t },
+                                                icon = t.icon,
+                                                label = t.title,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -197,6 +246,7 @@ fun App(sharedText: MutableState<String>) {
                     Box(
                         Modifier
                             .fillMaxSize()
+                            .layerBackdrop(backdrop)
                             .padding(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding()),
                     ) {
                         AnimatedContent(

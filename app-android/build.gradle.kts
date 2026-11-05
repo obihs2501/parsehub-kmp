@@ -43,4 +43,5 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.documentfile)
     implementation(libs.telephoto.zoomable)
+    implementation(libs.miuix.blur.android)
 }
